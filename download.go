@@ -81,29 +81,35 @@ func (f *File) needBlocks(start, end int) error {
 		f.rPos = start
 	}
 
-	blk := make([]byte, f.blkSize)
+	posByte := int64(f.rPos) * f.blkSize
+	f.local.Seek(posByte, io.SeekStart)
 
 	for f.rPos <= end {
-		log.Printf("downloading block %d", f.rPos)
 		// load a block
-		n, err := io.ReadFull(f.reader.Body, blk)
+		n := f.blkSize
+		if posByte+n > f.size {
+			// special case: last block
+			n = f.size - posByte
+		}
+		log.Printf("downloading block %d (%d bytes)", f.rPos, n)
+
+		n, err := io.CopyN(f.local, f.reader.Body, n)
 		if err != nil {
+			log.Printf("download error: %s", err)
+			if err == io.EOF {
+				err = io.ErrUnexpectedEOF
+			}
 			f.reader.Body.Close()
 			f.reader = nil
 			return err
 		}
 
 		// write to local
-		_, err = f.local.WriteAt(blk[:n], int64(f.rPos)*f.blkSize)
-		if err != nil {
-			f.reader.Body.Close()
-			f.reader = nil
-			return err
-		}
 		f.setBlock(f.rPos)
 
 		// increment rPos
 		f.rPos += 1
+		posByte += f.blkSize
 	}
 
 	return nil

@@ -14,6 +14,7 @@ func TestISO(t *testing.T) {
 		t.Logf("unable to create smartremote object: %s", err)
 		return
 	}
+	defer f.Close()
 
 	// use a lib to load iso9660 data
 	r, err := iso9660.NewReader(f)
