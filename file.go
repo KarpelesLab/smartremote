@@ -20,10 +20,15 @@ type File struct {
 	pos     int64 // read position in file
 
 	local    *os.File
-	complete bool // file is fully local, no need for any network activity
+	complete bool   // file is fully local, no need for any network activity
+	status   []byte // download status (each bit is 1 block, 1=downloaded)
 
 	blkSize int64
 
 	lk  sync.RWMutex
 	mlk *idlock.IntLock
+
+	// http reader
+	reader *http.Response
+	rPos   int // in block
 }

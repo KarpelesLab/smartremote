@@ -41,8 +41,12 @@ func (f *File) getSize() error {
 		return fmt.Errorf("HTTP HEAD response has no Content-Length")
 	}
 
+	// might want to check for "Accept-Ranges" header
+
 	f.hasSize = true
 	f.size = res.ContentLength
+	f.local.Truncate(f.size)
+	f.status = make([]byte, int64(f.size/f.blkSize))
 
 	return nil
 }
@@ -114,6 +118,11 @@ func (f *File) ReadAt(p []byte, off int64) (int, error) {
 }
 
 func (f *File) readAt(p []byte, off int64) (int, error) {
+	if f.complete {
+		// file is complete, let the OS handle that
+		return f.local.ReadAt(p, off)
+	}
+
 	err := f.getSize()
 	if err != nil {
 		return 0, err

@@ -52,7 +52,7 @@ func Open(u string) (*File, error) {
 		blkSize: DefaultBlockSize,
 	}
 
-	fp, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0700)
+	fp, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		if !os.IsExist(err) {
 			return nil, err
