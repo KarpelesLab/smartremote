@@ -5,7 +5,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/MagicalTux/idlock"
+	"github.com/KarpelesLab/idlock"
 )
 
 type File struct {
