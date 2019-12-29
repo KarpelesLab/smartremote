@@ -1,3 +1,5 @@
+[![GoDoc](https://godoc.org/github.com/KarpelesLab/smartremote?status.svg)](https://godoc.org/github.com/KarpelesLab/smartremote)
+
 # SmartRemote
 
 NOTE: this is not a remote for your TV, just a smart way to access remote files.
