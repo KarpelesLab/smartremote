@@ -21,5 +21,7 @@ type File struct {
 	local    *os.File
 	complete bool // file is fully local, no need for any network activity
 
+	blkSize int64
+
 	lk sync.RWMutex
 }

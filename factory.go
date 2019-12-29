@@ -3,6 +3,7 @@ package smartremote
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,7 +16,11 @@ var (
 	openFilesLk sync.RWMutex
 )
 
-func Simple(u string) (*File, error) {
+const DefaultBlockSize = 65536
+
+// Open a given URL and return a file pointer that will run partial downloads
+// when reads are needed.
+func Open(u string) (*File, error) {
 	uObj, err := url.Parse(u)
 	if err != nil {
 		return nil, err
@@ -33,6 +38,7 @@ func Simple(u string) (*File, error) {
 		return f, nil
 	}
 
+	// we stay locked until end of op to avoid issues
 	openFilesLk.Lock()
 	defer openFilesLk.Unlock()
 
@@ -46,9 +52,10 @@ func Simple(u string) (*File, error) {
 	localPath := filepath.Join(os.TempDir(), "remote-"+hashStr+".bin")
 
 	f = &File{
-		url:    uObj,
-		path:   localPath,
-		client: http.DefaultClient,
+		url:     uObj,
+		path:    localPath,
+		client:  http.DefaultClient,
+		blkSize: DefaultBlockSize,
 	}
 
 	fp, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0700)
@@ -61,6 +68,12 @@ func Simple(u string) (*File, error) {
 		fp, err = os.Open(localPath)
 		if err != nil {
 			return nil, err
+		}
+
+		siz, err := fp.Seek(0, io.SeekEnd)
+		if err == nil {
+			f.size = siz
+			f.hasSize = true
 		}
 
 		f.complete = true
