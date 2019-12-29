@@ -2,14 +2,17 @@ package smartremote
 
 import (
 	"archive/zip"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"log"
 	"testing"
 )
 
 func TestZIP(t *testing.T) {
 	// open a random .zip file off internet (a big one)
-	// http://download.qt.io/archive/qt/5.2/5.2.1/submodules/qtmultimedia-opensource-src-5.2.1.zip
 	f, err := Open("http://ftp.jaist.ac.jp/pub/qtproject/archive/qt/5.2/5.2.1/submodules/qtmultimedia-opensource-src-5.2.1.zip")
+	//f, err := Open("http://ftp.jaist.ac.jp/pub/qtproject/archive/qt/5.2/5.2.1/single/qt-everywhere-opensource-src-5.2.1.zip")
 	if err != nil {
 		t.Fatalf("unable to create smartremote object: %s", err)
 		return
@@ -29,7 +32,27 @@ func TestZIP(t *testing.T) {
 		return
 	}
 
-	for _, fil := range r.File {
-		log.Printf("file: %s", fil.Name)
+	log.Printf("parsed zip file, has %d files", len(r.File))
+
+	log.Printf("grabbing one file in zip file and checking hash")
+
+	// let's read file qtmultimedia-opensource-src-5.2.1/src/src.pro
+	for _, fl := range r.File {
+		if fl.Name == "qtmultimedia-opensource-src-5.2.1/src/src.pro" {
+			subfl, err := fl.Open()
+			if err != nil {
+				t.Fatalf("failed to open file: %s", err)
+				return
+			}
+
+			h := sha256.New()
+			io.Copy(h, subfl)
+			subfl.Close()
+			val := h.Sum(nil)
+
+			if hex.EncodeToString(val) != "d9d79f7240562605cc41d900f41059e5ec3b1de2afc690ed0d5e1de20b7181f6" {
+				t.Fatalf("invalid hash value for file, got %s", hex.EncodeToString(val))
+			}
+		}
 	}
 }
