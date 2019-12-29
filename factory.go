@@ -18,7 +18,8 @@ var (
 const DefaultBlockSize = 65536
 
 // Open a given URL and return a file pointer that will run partial downloads
-// when reads are needed.
+// when reads are needed. Downloaded data will be stored in the system temp
+// directory, and will be removed at the end if download is incomplete.
 func Open(u string) (*File, error) {
 	// generate hash
 	hash := sha256.Sum256([]byte(u))

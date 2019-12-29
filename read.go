@@ -51,6 +51,7 @@ func (f *File) getSize() error {
 	return nil
 }
 
+// GetSize returns a file's size according to the remote server.
 func (f *File) GetSize() (int64, error) {
 	f.lk.Lock()
 	defer f.lk.Unlock()
@@ -65,6 +66,7 @@ func (f *File) GetSize() (int64, error) {
 	return f.size, nil
 }
 
+// Seek in file for next Read() operation.
 func (f *File) Seek(offset int64, whence int) (int64, error) {
 	f.lk.Lock()
 	defer f.lk.Unlock()
