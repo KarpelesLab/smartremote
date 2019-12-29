@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"os"
 	"sync"
+
+	"github.com/MagicalTux/idlock"
 )
 
 type File struct {
@@ -22,5 +24,6 @@ type File struct {
 
 	blkSize int64
 
-	lk sync.RWMutex
+	lk  sync.RWMutex
+	mlk *idlock.IntLock
 }
