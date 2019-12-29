@@ -2,15 +2,14 @@ package smartremote
 
 import (
 	"net/http"
-	"net/url"
 	"os"
 	"sync"
 )
 
 type File struct {
-	path     string   // local path on disk
-	pathMeta string   // local path on disk of metadata
-	url      *url.URL // url
+	path     string // local path on disk
+	pathMeta string // local path on disk of metadata
+	url      string // url
 
 	client  *http.Client
 	offset  int64 // offset in url

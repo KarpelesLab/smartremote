@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -21,11 +20,6 @@ const DefaultBlockSize = 65536
 // Open a given URL and return a file pointer that will run partial downloads
 // when reads are needed.
 func Open(u string) (*File, error) {
-	uObj, err := url.Parse(u)
-	if err != nil {
-		return nil, err
-	}
-
 	// generate hash
 	hash := sha256.Sum256([]byte(u))
 
@@ -52,7 +46,7 @@ func Open(u string) (*File, error) {
 	localPath := filepath.Join(os.TempDir(), "remote-"+hashStr+".bin")
 
 	f = &File{
-		url:     uObj,
+		url:     u,
 		path:    localPath,
 		client:  http.DefaultClient,
 		blkSize: DefaultBlockSize,
