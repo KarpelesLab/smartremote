@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/KarpelesLab/idlock"
+	"github.com/RoaringBitmap/roaring"
 )
 
 type File struct {
@@ -20,8 +21,8 @@ type File struct {
 	pos     int64 // read position in file
 
 	local    *os.File
-	complete bool   // file is fully local, no need for any network activity
-	status   []byte // download status (each bit is 1 block, 1=downloaded)
+	complete bool            // file is fully local, no need for any network activity
+	status   *roaring.Bitmap // download status (each bit is 1 block, 1=downloaded)
 
 	blkSize int64
 

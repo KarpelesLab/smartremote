@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/RoaringBitmap/roaring"
 )
 
 func (f *File) getSize() error {
@@ -46,7 +48,7 @@ func (f *File) getSize() error {
 	f.hasSize = true
 	f.size = res.ContentLength
 	f.local.Truncate(f.size)
-	f.status = make([]byte, int64(f.size/f.blkSize))
+	f.status = roaring.New()
 
 	return nil
 }
@@ -141,8 +143,8 @@ func (f *File) readAt(p []byte, off int64) (int, error) {
 
 	// ok so now we need to calculate the first and last block we'll need
 	// first block is floor(off/blkSize), last block is floor((off+len)/blkSize)
-	firstBlock := int(off / f.blkSize)
-	lastBlock := int((off + int64(len(p))) / f.blkSize)
+	firstBlock := uint32(off / f.blkSize)
+	lastBlock := uint32((off + int64(len(p))) / f.blkSize)
 
 	// this will ensure blocks are downloaded and in f.local
 	err = f.needBlocks(firstBlock, lastBlock)
