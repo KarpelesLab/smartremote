@@ -77,5 +77,7 @@ func (f *File) needBlocks(start, end uint32) error {
 		posByte += f.blkSize
 	}
 
+	f.SavePart()
+
 	return nil
 }
