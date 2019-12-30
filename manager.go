@@ -8,6 +8,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type DownloadManager struct {
@@ -41,6 +42,7 @@ type dlClient struct {
 	reader *http.Response
 	rPos   int64 // in bytes
 	lk     sync.Mutex
+	expire time.Time
 }
 
 type dlReaderAt struct {
@@ -60,6 +62,8 @@ func NewDownloadManager() *DownloadManager {
 		openFiles:     make(map[[32]byte]*File),
 	}
 	dl.cd = sync.NewCond(&dl.mapLock)
+
+	go dl.managerTask()
 
 	return dl
 }
@@ -104,10 +108,42 @@ func (dl *DownloadManager) getClient(u string) *dlClient {
 			dlm:     dl,
 			url:     u,
 			taskCnt: 1, // pre-init at 1 to avoid reap
+			expire:  time.Now().Add(300 * time.Second),
 		}
 		dl.clients[u] = cl
 		dl.mapLock.Unlock()
 		return cl
+	}
+}
+
+func (dlm *DownloadManager) managerTask() {
+	for {
+		time.Sleep(10 * time.Second)
+
+		dlm.intervalReap()
+	}
+}
+
+func (dlm *DownloadManager) intervalReap() {
+	dlm.mapLock.Lock()
+	defer dlm.mapLock.Unlock()
+	change := false
+	now := time.Now()
+
+	for u, cl := range dlm.clients {
+		if atomic.LoadUintptr(&cl.taskCnt) != 0 {
+			continue
+		}
+
+		if cl.expire.Before(now) {
+			delete(dlm.clients, u)
+			cl.Close()
+			change = true
+		}
+	}
+
+	if change {
+		dlm.cd.Broadcast()
 	}
 }
 
@@ -137,6 +173,8 @@ func (dl *dlClient) Close() error {
 		dl.reader = nil
 		return err
 	}
+
+	dl.dlm.cd.Broadcast()
 
 	return nil
 }
@@ -189,6 +227,7 @@ func (dl *dlClient) ReadAt(p []byte, off int64) (int, error) {
 		dl.reader = resp
 		dl.rPos = off
 	}
+	dl.expire = time.Now().Add(time.Minute)
 
 	n, err := io.ReadFull(dl.reader.Body, p)
 	if err != nil {
