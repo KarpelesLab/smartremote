@@ -1,4 +1,7 @@
+[![Build Status](https://travis-ci.org/KarpelesLab/smartremote.svg)](https://travis-ci.org/KarpelesLab/smartremote)
 [![GoDoc](https://godoc.org/github.com/KarpelesLab/smartremote?status.svg)](https://godoc.org/github.com/KarpelesLab/smartremote)
+[![Coverage Status](https://coveralls.io/repos/github/KarpelesLab/smartremote/badge.svg?branch=master)](https://coveralls.io/github/KarpelesLab/smartremote?branch=master)
+
 
 # SmartRemote
 
