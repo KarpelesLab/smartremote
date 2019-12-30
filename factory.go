@@ -79,7 +79,7 @@ func (dlm *DownloadManager) OpenTo(u, localPath string) (*File, error) {
 				// failed
 				return nil, err
 			}
-			err = f.ReadPart()
+			err = f.readPart()
 			if err != nil {
 				log.Printf("failed to resume download: %s", err)
 				// truncate

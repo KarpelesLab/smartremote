@@ -41,7 +41,7 @@ func (f *File) SavePart() error {
 	return nil
 }
 
-func (f *File) ReadPart() error {
+func (f *File) readPart() error {
 	in, err := os.Open(f.path + ".part")
 	if err != nil {
 		return err
