@@ -20,7 +20,7 @@ func (f *File) needBlocks(start, end uint32) error {
 
 	// trim start/end based on known downloaded blocks
 	for {
-		if f.hasBlock(start) && (start < end) {
+		if f.status.Contains(start) && (start < end) {
 			start += 1
 		} else {
 			break
@@ -28,14 +28,14 @@ func (f *File) needBlocks(start, end uint32) error {
 	}
 
 	for {
-		if f.hasBlock(end) && (end > start) {
+		if f.status.Contains(end) && (end > start) {
 			end -= 1
 		} else {
 			break
 		}
 	}
 
-	if start == end && f.hasBlock(start) {
+	if start == end && f.status.Contains(start) {
 		// we already have all blocks
 		return nil
 	}
@@ -70,7 +70,7 @@ func (f *File) needBlocks(start, end uint32) error {
 		}
 
 		// write to local
-		f.setBlock(start)
+		f.status.Add(start)
 
 		// increment start
 		start += 1
@@ -78,12 +78,4 @@ func (f *File) needBlocks(start, end uint32) error {
 	}
 
 	return nil
-}
-
-func (f *File) hasBlock(b uint32) bool {
-	return f.status.Contains(b)
-}
-
-func (f *File) setBlock(b uint32) {
-	f.status.Add(b)
 }
