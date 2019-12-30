@@ -181,6 +181,8 @@ func (dl *dlClient) ReadAt(p []byte, off int64) (int, error) {
 	if err != nil {
 		dl.reader.Body.Close()
 		dl.reader = nil
+	} else {
+		dl.rPos += int64(n)
 	}
 
 	return n, err
