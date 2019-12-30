@@ -11,10 +11,19 @@ import (
 )
 
 type DownloadManager struct {
-	MaxConcurrent int          // maximum number of concurrent downloads, changing it might not be effective immediately. Default is 10
-	Client        *http.Client // Client is the http client used to access urls to be downloaded
-	TmpDir        string       // TmpDir is where temporary files are created, and by default will be os.TempDir()
-	MaxDataJump   int64        // maximum data that can be read & dropped when seeking forward, default is 128k
+	// MaxConcurrent is the maximum number of concurrent downloads.
+	// changing it might not be effective immediately. Default is 10
+	MaxConcurrent int
+
+	// Client is the http client used to access urls to be downloaded
+	Client *http.Client
+
+	// TmpDir is where temporary files are created, and by default will be os.TempDir()
+	TmpDir string
+
+	// MaxDataJump is the maximum data that can be read & dropped when seeking forward
+	// default is 128k
+	MaxDataJump int64
 
 	clients map[string]*dlClient
 	mapLock sync.Mutex

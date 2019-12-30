@@ -52,7 +52,7 @@ func (f *File) needBlocks(start, end uint32) error {
 			n = f.size - posByte
 		}
 
-		log.Printf("downloading block %d (%d bytes)", start, n)
+		//log.Printf("downloading block %d (%d bytes)", start, n)
 		_, err := f.dlm.readUrl(f.url, buf[:n], posByte)
 		if err != nil {
 			log.Printf("download error: %s", err)
