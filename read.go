@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
-	"github.com/RoaringBitmap/roaring"
 )
 
 func (f *File) getSize() error {
@@ -48,7 +46,6 @@ func (f *File) getSize() error {
 	f.hasSize = true
 	f.size = res.ContentLength
 	f.local.Truncate(f.size)
-	f.status = roaring.New()
 
 	return nil
 }

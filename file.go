@@ -10,9 +10,8 @@ import (
 )
 
 type File struct {
-	path     string // local path on disk
-	pathMeta string // local path on disk of metadata
-	url      string // url
+	path string // local path on disk
+	url  string // url
 
 	client  *http.Client
 	offset  int64 // offset in url

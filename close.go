@@ -5,11 +5,19 @@ import "os"
 // Close will close the file and make sure data is synced on the disk if the
 // download is still partial.
 func (f *File) Close() error {
+	err := f.SavePart()
+
 	if !f.complete {
-		// this is not complete, avoid keeping the partial file on disk
-		err := f.local.Close()
-		os.Remove(f.path)
-		return err
+		// this is not complete
+		if err != nil {
+			// failed to save part, remove partial data
+			err = f.local.Close()
+			os.Remove(f.path)
+			return err
+		}
+
+		// we managed to save the part data, ok to keep partial data
+		return f.local.Close()
 	}
 
 	return f.local.Close()
