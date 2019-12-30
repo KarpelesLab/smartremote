@@ -8,14 +8,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/RoaringBitmap/roaring"
-)
-
-var (
-	openFiles   = make(map[[32]byte]*File)
-	openFilesLk sync.RWMutex
 )
 
 const DefaultBlockSize = 65536
@@ -34,9 +28,9 @@ func (dlm *DownloadManager) Open(u string) (*File, error) {
 	// generate hash
 	hash := sha256.Sum256([]byte(u))
 
-	openFilesLk.RLock()
-	f, ok := openFiles[hash]
-	openFilesLk.RUnlock()
+	dlm.openFilesLk.RLock()
+	f, ok := dlm.openFiles[hash]
+	dlm.openFilesLk.RUnlock()
 
 	// if found, end there
 	if ok {
@@ -44,11 +38,11 @@ func (dlm *DownloadManager) Open(u string) (*File, error) {
 	}
 
 	// we stay locked until end of op to avoid issues
-	openFilesLk.Lock()
-	defer openFilesLk.Unlock()
+	dlm.openFilesLk.Lock()
+	defer dlm.openFilesLk.Unlock()
 
 	// retry (just in case)
-	if f, ok = openFiles[hash]; ok {
+	if f, ok = dlm.openFiles[hash]; ok {
 		return f, nil
 	}
 
@@ -102,7 +96,7 @@ func (dlm *DownloadManager) Open(u string) (*File, error) {
 	}
 	f.local = fp
 
-	openFiles[hash] = f
+	dlm.openFiles[hash] = f
 
 	return f, nil
 }

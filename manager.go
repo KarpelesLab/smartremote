@@ -19,6 +19,9 @@ type DownloadManager struct {
 	clients map[string]*dlClient
 	mapLock sync.Mutex
 	cd      *sync.Cond
+
+	openFiles   map[[32]byte]*File
+	openFilesLk sync.RWMutex
 }
 
 type dlClient struct {
@@ -45,6 +48,7 @@ func NewDownloadManager() *DownloadManager {
 		TmpDir:        os.TempDir(),
 		MaxDataJump:   131072,
 		clients:       make(map[string]*dlClient),
+		openFiles:     make(map[[32]byte]*File),
 	}
 	dl.cd = sync.NewCond(&dl.mapLock)
 
