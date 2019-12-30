@@ -60,6 +60,7 @@ func (dlm *DownloadManager) OpenTo(u, localPath string) (*File, error) {
 	f := &File{
 		url:     u,
 		path:    localPath,
+		hash:    hash,
 		client:  http.DefaultClient,
 		blkSize: DefaultBlockSize,
 		dlm:     dlm,

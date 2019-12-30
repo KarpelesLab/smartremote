@@ -12,6 +12,7 @@ import (
 type File struct {
 	path string // local path on disk
 	url  string // url
+	hash [32]byte
 
 	client  *http.Client
 	offset  int64 // offset in url

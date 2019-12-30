@@ -7,6 +7,10 @@ import "os"
 func (f *File) Close() error {
 	err := f.SavePart()
 
+	f.dlm.openFilesLk.Lock()
+	delete(f.dlm.openFiles, f.hash)
+	f.dlm.openFilesLk.Unlock()
+
 	if !f.complete {
 		// this is not complete
 		if err != nil {
