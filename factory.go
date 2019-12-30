@@ -37,20 +37,27 @@ func (dlm *DownloadManager) Open(u string) (*File, error) {
 		return f, nil
 	}
 
+	// generate local path
+	hashStr := base64.RawURLEncoding.EncodeToString(hash[:])
+	localPath := filepath.Join(os.TempDir(), "remote-"+hashStr+".bin")
+
+	return dlm.OpenTo(u, localPath)
+}
+
+func (dlm *DownloadManager) OpenTo(u, localPath string) (*File, error) {
+	// generate hash (again if called with Open)
+	hash := sha256.Sum256([]byte(u))
+
 	// we stay locked until end of op to avoid issues
 	dlm.openFilesLk.Lock()
 	defer dlm.openFilesLk.Unlock()
 
 	// retry (just in case)
-	if f, ok = dlm.openFiles[hash]; ok {
+	if f, ok := dlm.openFiles[hash]; ok {
 		return f, nil
 	}
 
-	// generate local path
-	hashStr := base64.RawURLEncoding.EncodeToString(hash[:])
-	localPath := filepath.Join(os.TempDir(), "remote-"+hashStr+".bin")
-
-	f = &File{
+	f := &File{
 		url:     u,
 		path:    localPath,
 		client:  http.DefaultClient,
