@@ -2,10 +2,8 @@ package smartremote
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"log"
-	"net/http"
 )
 
 func (f *File) needBlocks(start, end int) error {
@@ -42,73 +40,40 @@ func (f *File) needBlocks(start, end int) error {
 		return nil
 	}
 
-	// check if current reader can be used
-	if f.reader != nil {
-		// check if can be used
-		if f.rPos > start {
-			// nope
-			f.reader.Body.Close()
-			f.reader = nil
-		} else if f.rPos < start {
-			// check if diff is lower than 5
-			if start-f.rPos < 5 {
-				// we can read the extra data and commit it to disk
-				start = f.rPos
-			} else {
-				f.reader.Body.Close()
-				f.reader = nil
-			}
-		}
-	}
-
-	// instanciate a new reader if needed
-	if f.reader == nil {
-		// spawn a new reader
-		req, err := http.NewRequest("GET", f.url, nil)
-
-		if start != 0 {
-			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", int64(start)*f.blkSize))
-		}
-
-		log.Printf("initializing HTTP connection download at block %d~", start)
-
-		// should respond with code 206 Partial Content
-		resp, err := f.client.Do(req)
-		if err != nil {
-			return err
-		}
-		f.reader = resp
-		f.rPos = start
-	}
-
-	posByte := int64(f.rPos) * f.blkSize
+	posByte := int64(start) * f.blkSize
 	f.local.Seek(posByte, io.SeekStart)
+	buf := make([]byte, f.blkSize)
 
-	for f.rPos <= end {
+	for start <= end {
 		// load a block
 		n := f.blkSize
 		if posByte+n > f.size {
 			// special case: last block
 			n = f.size - posByte
 		}
-		log.Printf("downloading block %d (%d bytes)", f.rPos, n)
 
-		n, err := io.CopyN(f.local, f.reader.Body, n)
+		log.Printf("downloading block %d (%d bytes)", start, n)
+		_, err := f.dlm.readUrl(f.url, buf[:n], posByte)
 		if err != nil {
 			log.Printf("download error: %s", err)
 			if err == io.EOF {
 				err = io.ErrUnexpectedEOF
 			}
-			f.reader.Body.Close()
-			f.reader = nil
+			return err
+		}
+
+		_, err = f.local.Write(buf[:n])
+		if err != nil {
+			// failed to write (disk full?)
+			log.Printf("write error: %s", err)
 			return err
 		}
 
 		// write to local
-		f.setBlock(f.rPos)
+		f.setBlock(start)
 
-		// increment rPos
-		f.rPos += 1
+		// increment start
+		start += 1
 		posByte += f.blkSize
 	}
 

@@ -28,7 +28,5 @@ type File struct {
 	lk  sync.RWMutex
 	mlk *idlock.IntLock
 
-	// http reader
-	reader *http.Response
-	rPos   int // in block
+	dlm *DownloadManager
 }

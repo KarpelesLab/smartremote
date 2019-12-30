@@ -1,7 +1,7 @@
 package smartremote
 
 import (
-	"log"
+	"io"
 	"testing"
 
 	"github.com/hooklift/iso9660"
@@ -23,13 +23,17 @@ func TestISO(t *testing.T) {
 		return
 	}
 
+	cnt := 0
 	for {
-		n, err := r.Next()
+		_, err := r.Next()
 		if err != nil {
-			log.Printf("err = %s", err)
+			if err == io.EOF {
+				break
+			}
+			t.Fatalf("error while reading: %s", err)
 			break
 		}
-
-		log.Printf("file: %s", n.Name())
+		cnt += 1
 	}
+	t.Logf("Confirmed %d files found in .iso", cnt)
 }

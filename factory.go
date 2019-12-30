@@ -51,6 +51,7 @@ func Open(u string) (*File, error) {
 		path:    localPath,
 		client:  http.DefaultClient,
 		blkSize: DefaultBlockSize,
+		dlm:     DefaultDownloadManager,
 	}
 
 	fp, err := os.OpenFile(localPath, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
