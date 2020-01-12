@@ -5,7 +5,6 @@ import (
 	"os"
 	"sync"
 
-	"github.com/KarpelesLab/idlock"
 	"github.com/RoaringBitmap/roaring"
 )
 
@@ -26,8 +25,7 @@ type File struct {
 
 	blkSize int64
 
-	lk  sync.RWMutex
-	mlk *idlock.IntLock
+	lk sync.RWMutex
 
 	dlm *DownloadManager
 }

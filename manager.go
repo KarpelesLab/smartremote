@@ -224,6 +224,11 @@ func (dl *dlClient) ReadAt(p []byte, off int64) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+		if resp.StatusCode > 299 {
+			// that's bad
+			resp.Body.Close()
+			return 0, fmt.Errorf("failed to download: %s", resp.Status)
+		}
 		dl.reader = resp
 		dl.rPos = off
 	}

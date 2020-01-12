@@ -28,7 +28,9 @@ func (f *File) getSize() error {
 	// run query
 	res, err := f.client.Head(f.url)
 	if err != nil {
-		return err
+		// could be linked to another kind of error (for example signed S3 urls won't let us do HEAD)
+		// fallback to full download
+		return f.downloadFull()
 	}
 	res.Body.Close()
 

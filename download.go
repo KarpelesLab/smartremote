@@ -2,9 +2,47 @@ package smartremote
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log"
 )
+
+func (f *File) downloadFull() error {
+	// download the file fully
+	// (we are in a lock)
+	if f.complete {
+		return nil
+	}
+	f.local.Seek(0, io.SeekStart)
+	resp, err := f.dlm.Client.Get(f.url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// check response code
+	if resp.StatusCode > 299 {
+		// that's bad
+		return fmt.Errorf("failed to download: %s", resp.Status)
+	}
+
+	// let's just perform a regular copy
+	n, err := io.Copy(f.local, resp.Body)
+	if err != nil {
+		// ok that's a big failure
+		f.status.Clear() // because likely corrupt
+		f.SavePart()
+		return err
+	}
+
+	// now let's ensure our file size is correct
+	f.local.Truncate(n)
+
+	f.complete = true
+	f.SavePart()
+
+	return nil
+}
 
 func (f *File) needBlocks(start, end uint32) error {
 	// ensure listed blocks exist and are downloaded
@@ -56,6 +94,10 @@ func (f *File) needBlocks(start, end uint32) error {
 		_, err := f.dlm.readUrl(f.url, buf[:n], posByte)
 		if err != nil {
 			log.Printf("download error: %s", err)
+			if f.status.IsEmpty() && posByte != 0 {
+				// this is typically linked to backend refusing to let us do partial download
+				return f.downloadFull()
+			}
 			if err == io.EOF {
 				err = io.ErrUnexpectedEOF
 			}
