@@ -28,14 +28,14 @@ func (f *File) getSize() error {
 	// run query
 	res, err := f.client.Head(f.url)
 	if err != nil {
-		// could be linked to another kind of error (for example signed S3 urls won't let us do HEAD)
-		// fallback to full download
-		return f.downloadFull()
+		return err
 	}
 	res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("HTTP request response: %s", res.Status)
+		// could be linked to another kind of error (for example signed S3 urls won't let us do HEAD)
+		// fallback to full download
+		return f.downloadFull()
 	}
 
 	if res.ContentLength == -1 {

@@ -39,6 +39,8 @@ func (f *File) downloadFull() error {
 	f.local.Truncate(n)
 
 	f.complete = true
+	f.hasSize = true
+	f.size = n
 	f.SavePart()
 
 	return nil
