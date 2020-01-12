@@ -101,6 +101,12 @@ func (dlm *DownloadManager) OpenTo(u, localPath string) (*File, error) {
 
 			f.complete = true
 		}
+	} else {
+		// file was created, let's add .part too
+		fp2, err := os.OpenFile(localPath+".part", os.O_RDWR|os.O_CREATE|os.O_EXCL, 0600)
+		if err == nil {
+			fp2.Close()
+		}
 	}
 	f.local = fp
 
