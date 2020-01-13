@@ -39,10 +39,11 @@ type DownloadManager struct {
 	// default is 128k
 	MaxDataJump int64
 
-	clients map[string]*dlClient
-	mapLock sync.Mutex
-	cd      *sync.Cond
-	idleCnt uintptr
+	clients     map[string]*dlClient
+	mapLock     sync.Mutex
+	cd          *sync.Cond
+	taskCnt     uintptr
+	idleTrigger chan struct{}
 
 	openFiles   map[[32]byte]*File
 	openFilesLk sync.RWMutex
@@ -75,6 +76,7 @@ func NewDownloadManager() *DownloadManager {
 		MaxDataJump:   512 * 1024, // 512kB
 		clients:       make(map[string]*dlClient),
 		openFiles:     make(map[[32]byte]*File),
+		idleTrigger:   make(chan struct{}),
 	}
 	dl.cd = sync.NewCond(&dl.mapLock)
 
@@ -94,6 +96,7 @@ func (dlr *dlReaderAt) ReadAt(p []byte, off int64) (int, error) {
 func (dlm *DownloadManager) readUrl(url string, p []byte, off int64, handler DownloadTarget) (int, error) {
 	dl := dlm.getClient(url, handler)
 	defer atomic.AddUintptr(&dl.taskCnt, ^uintptr(0))
+	defer atomic.AddUintptr(&dlm.taskCnt, ^uintptr(0))
 
 	return dl.ReadAt(p, off)
 }
@@ -104,6 +107,7 @@ func (dl *DownloadManager) getClient(u string, handler DownloadTarget) *dlClient
 	for {
 		if cl, ok := dl.clients[u]; ok {
 			atomic.AddUintptr(&cl.taskCnt, 1)
+			atomic.AddUintptr(&dl.taskCnt, 1)
 			dl.mapLock.Unlock()
 			return cl
 		}
@@ -126,6 +130,7 @@ func (dl *DownloadManager) getClient(u string, handler DownloadTarget) *dlClient
 			expire:  time.Now().Add(300 * time.Second),
 			handler: handler,
 		}
+		atomic.AddUintptr(&dl.taskCnt, 1)
 		dl.clients[u] = cl
 		dl.mapLock.Unlock()
 		return cl
@@ -133,12 +138,17 @@ func (dl *DownloadManager) getClient(u string, handler DownloadTarget) *dlClient
 }
 
 func (dlm *DownloadManager) managerTask() {
+	t := time.NewTicker(time.Second)
 	for {
-		if dlm.intervalProcess() {
-			time.Sleep(10 * time.Second)
-		} else {
-			time.Sleep(50 * time.Millisecond)
+		select {
+		case <-t.C:
+		case _, ok := <-dlm.idleTrigger:
+			if !ok {
+				// need to shut down
+				return
+			}
 		}
+		dlm.intervalProcess()
 	}
 }
 
@@ -168,8 +178,8 @@ func (dlm *DownloadManager) intervalProcess() bool {
 			continue
 		}
 
-		if atomic.LoadUintptr(&dlm.idleCnt) == 0 {
-			atomic.AddUintptr(&dlm.idleCnt, 1)
+		if atomic.LoadUintptr(&dlm.taskCnt) == 0 {
+			atomic.AddUintptr(&dlm.taskCnt, 1)
 			atomic.AddUintptr(&cl.taskCnt, 1)
 			go cl.idleTaskRun()
 		}
@@ -183,8 +193,12 @@ func (dlm *DownloadManager) intervalProcess() bool {
 
 func (dl *dlClient) idleTaskRun() {
 	// this is run in a separate process
-	defer atomic.AddUintptr(&dl.taskCnt, ^uintptr(0))
-	defer atomic.AddUintptr(&dl.dlm.idleCnt, ^uintptr(0))
+
+	defer func() {
+		atomic.AddUintptr(&dl.taskCnt, ^uintptr(0))
+		atomic.AddUintptr(&dl.dlm.taskCnt, ^uintptr(0))
+		dl.dlm.idleTrigger <- struct{}{}
+	}()
 
 	// increase timer now to avoid deletion
 	dl.expire = time.Now().Add(time.Minute)
