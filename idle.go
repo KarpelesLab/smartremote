@@ -100,3 +100,7 @@ func (f *File) feed(b []byte, offset int64) error {
 
 	return nil
 }
+
+func (f *File) getBlockSize() int64 {
+	return f.blkSize
+}
