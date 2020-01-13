@@ -7,6 +7,13 @@ import (
 )
 
 func (f *File) SavePart() error {
+	f.lk.Lock()
+	defer f.lk.Unlock()
+
+	return f.savePart()
+}
+
+func (f *File) savePart() error {
 	// save partial file
 	if f.complete {
 		// remove part file if any

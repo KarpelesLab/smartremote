@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+type DownloadTarget interface {
+	WantsFollowing(offset int64) int         // returns >0 if the bytes starting at offset are useful
+	FirstMissing() int64                     // returns first missing byte, or -1 if file is complete
+	IngestData(b []byte, offset int64) error // stores data received
+}
+
 type DownloadManager struct {
 	// MaxConcurrent is the maximum number of concurrent downloads.
 	// changing it might not be effective immediately. Default is 10
@@ -38,6 +44,7 @@ type dlClient struct {
 	dlm     *DownloadManager
 	url     string
 	taskCnt uintptr // currently running/pending tasks
+	handler DownloadTarget
 
 	reader *http.Response
 	rPos   int64 // in bytes
@@ -73,17 +80,17 @@ func (dl *DownloadManager) For(u string) io.ReaderAt {
 }
 
 func (dlr *dlReaderAt) ReadAt(p []byte, off int64) (int, error) {
-	return dlr.dl.readUrl(dlr.url, p, off)
+	return dlr.dl.readUrl(dlr.url, p, off, nil)
 }
 
-func (dlm *DownloadManager) readUrl(url string, p []byte, off int64) (int, error) {
-	dl := dlm.getClient(url)
+func (dlm *DownloadManager) readUrl(url string, p []byte, off int64, handler DownloadTarget) (int, error) {
+	dl := dlm.getClient(url, handler)
 	defer atomic.AddUintptr(&dl.taskCnt, ^uintptr(0))
 
 	return dl.ReadAt(p, off)
 }
 
-func (dl *DownloadManager) getClient(u string) *dlClient {
+func (dl *DownloadManager) getClient(u string, handler DownloadTarget) *dlClient {
 	dl.mapLock.Lock()
 
 	for {
@@ -109,6 +116,7 @@ func (dl *DownloadManager) getClient(u string) *dlClient {
 			url:     u,
 			taskCnt: 1, // pre-init at 1 to avoid reap
 			expire:  time.Now().Add(300 * time.Second),
+			handler: handler,
 		}
 		dl.clients[u] = cl
 		dl.mapLock.Unlock()

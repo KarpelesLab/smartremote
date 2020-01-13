@@ -5,7 +5,10 @@ import "os"
 // Close will close the file and make sure data is synced on the disk if the
 // download is still partial.
 func (f *File) Close() error {
-	err := f.SavePart()
+	f.lk.Lock()
+	defer f.lk.Unlock()
+
+	err := f.savePart()
 
 	f.dlm.openFilesLk.Lock()
 	delete(f.dlm.openFiles, f.hash)

@@ -31,7 +31,7 @@ func (f *File) downloadFull() error {
 	if err != nil {
 		// ok that's a big failure
 		f.status.Clear() // because likely corrupt
-		f.SavePart()
+		f.savePart()
 		return err
 	}
 
@@ -41,7 +41,7 @@ func (f *File) downloadFull() error {
 	f.complete = true
 	f.hasSize = true
 	f.size = n
-	f.SavePart()
+	f.savePart()
 
 	return nil
 }
@@ -81,7 +81,7 @@ func (f *File) needBlocks(start, end uint32) error {
 	}
 
 	posByte := int64(start) * f.blkSize
-	f.local.Seek(posByte, io.SeekStart)
+	//f.local.Seek(posByte, io.SeekStart)
 	buf := make([]byte, f.blkSize)
 
 	for start <= end {
@@ -93,7 +93,7 @@ func (f *File) needBlocks(start, end uint32) error {
 		}
 
 		//log.Printf("downloading block %d (%d bytes)", start, n)
-		_, err := f.dlm.readUrl(f.url, buf[:n], posByte)
+		_, err := f.dlm.readUrl(f.url, buf[:n], posByte, f)
 		if err != nil {
 			log.Printf("download error: %s", err)
 			if f.status.IsEmpty() && posByte != 0 {
@@ -106,7 +106,7 @@ func (f *File) needBlocks(start, end uint32) error {
 			return err
 		}
 
-		_, err = f.local.Write(buf[:n])
+		_, err = f.local.WriteAt(buf[:n], posByte)
 		if err != nil {
 			// failed to write (disk full?)
 			log.Printf("write error: %s", err)
@@ -121,7 +121,7 @@ func (f *File) needBlocks(start, end uint32) error {
 		posByte += f.blkSize
 	}
 
-	f.SavePart()
+	f.savePart()
 
 	return nil
 }
