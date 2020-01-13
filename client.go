@@ -234,10 +234,12 @@ func (dl *dlClient) idleTaskRun() {
 	}
 	dl.rPos += int64(n)
 
-	// feed it
-	err = dl.handler.IngestData(buf[:n], off)
-	if err != nil {
-		log.Printf("idle write failed: %s", err)
-	}
+	// feed it (use separate thread to avoid deadlock)
+	go func() {
+		err = dl.handler.IngestData(buf[:n], off)
+		if err != nil {
+			log.Printf("idle write failed: %s", err)
+		}
+	}()
 	return
 }
