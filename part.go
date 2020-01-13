@@ -18,10 +18,11 @@ func (f *File) savePart() error {
 	if f.complete {
 		// remove part file if any
 		os.Remove(f.path + ".part")
+		os.Remove(f.path + ".wpart")
 		return nil
 	}
 
-	out, err := os.Create(f.path + ".part")
+	out, err := os.Create(f.path + ".wpart")
 	if err != nil {
 		return err
 	}
@@ -32,7 +33,7 @@ func (f *File) savePart() error {
 	_, err = out.Write(buf[:n])
 	if err != nil {
 		out.Close()
-		os.Remove(f.path + ".part")
+		os.Remove(f.path + ".wpart")
 		return err
 	}
 
@@ -41,11 +42,11 @@ func (f *File) savePart() error {
 	out.Close()
 
 	if err != nil {
-		os.Remove(f.path + ".part")
+		os.Remove(f.path + ".wpart")
 		return err
 	}
 
-	return nil
+	return os.Rename(f.path+".wpart", f.path+".part")
 }
 
 func (f *File) readPart() error {
