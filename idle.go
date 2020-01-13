@@ -49,6 +49,7 @@ func (f *File) FirstMissing() int64 {
 	}
 
 	if int64(f.status.GetCardinality()) == blkCount {
+		log.Printf("idle: file is now complete, marking as such")
 		// we already have all blocks
 		f.complete = true
 		f.savePart()
