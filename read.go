@@ -26,7 +26,7 @@ func (f *File) getSize() error {
 	}
 
 	// run query
-	res, err := f.client.Head(f.url)
+	res, err := f.dlm.Client.Head(f.url)
 	if err != nil {
 		return err
 	}

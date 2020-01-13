@@ -1,7 +1,6 @@
 package smartremote
 
 import (
-	"net/http"
 	"os"
 	"sync"
 
@@ -13,7 +12,6 @@ type File struct {
 	url  string // url
 	hash [32]byte
 
-	client  *http.Client
 	offset  int64 // offset in url
 	size    int64 // size of url
 	hasSize bool  // is size valid

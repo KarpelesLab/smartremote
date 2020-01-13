@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -61,7 +60,6 @@ func (dlm *DownloadManager) OpenTo(u, localPath string) (*File, error) {
 		url:     u,
 		path:    localPath,
 		hash:    hash,
-		client:  http.DefaultClient,
 		blkSize: DefaultBlockSize,
 		dlm:     dlm,
 		status:  roaring.New(),
