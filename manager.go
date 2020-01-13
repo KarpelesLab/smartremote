@@ -137,7 +137,7 @@ func (dlm *DownloadManager) managerTask() {
 		if dlm.intervalProcess() {
 			time.Sleep(10 * time.Second)
 		} else {
-			time.Sleep(1 * time.Second)
+			time.Sleep(50 * time.Millisecond)
 		}
 	}
 }
