@@ -9,12 +9,6 @@ import (
 	"time"
 )
 
-type DownloadTarget interface {
-	WantsFollowing(offset int64) int         // returns >0 if the bytes starting at offset are useful
-	FirstMissing() int64                     // returns first missing byte, or -1 if file is complete
-	IngestData(b []byte, offset int64) error // stores data received
-}
-
 type downloadFeed interface {
 	// feed intake can only be called during downloads for locking reasons
 	// it does the same as IngestData() but without the lock, which is already acquired during download
@@ -79,7 +73,7 @@ func (dlr *dlReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	return dlr.dl.readUrl(dlr.url, p, off, nil)
 }
 
-func (dlm *DownloadManager) readUrl(url string, p []byte, off int64, handler DownloadTarget) (int, error) {
+func (dlm *DownloadManager) readUrl(url string, p []byte, off int64, handler *File) (int, error) {
 	dl := dlm.getClient(url, handler)
 	defer atomic.AddUintptr(&dl.taskCnt, ^uintptr(0))
 	defer atomic.AddUintptr(&dlm.taskCnt, ^uintptr(0))
@@ -87,7 +81,7 @@ func (dlm *DownloadManager) readUrl(url string, p []byte, off int64, handler Dow
 	return dl.ReadAt(p, off)
 }
 
-func (dl *DownloadManager) getClient(u string, handler DownloadTarget) *dlClient {
+func (dl *DownloadManager) getClient(u string, handler *File) *dlClient {
 	dl.mapLock.Lock()
 
 	for {
@@ -154,7 +148,7 @@ func (dlm *DownloadManager) intervalProcess() bool {
 			continue
 		}
 
-		if cl.expire.Before(now) {
+		if cl.complete || cl.expire.Before(now) {
 			delete(dlm.clients, u)
 			go cl.Close() // let close run in thread so we don't get locked
 			change = true

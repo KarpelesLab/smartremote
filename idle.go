@@ -5,10 +5,7 @@ import (
 	"log"
 )
 
-func (f *File) WantsFollowing(offset int64) int {
-	f.lk.Lock()
-	defer f.lk.Unlock()
-
+func (f *File) wantsFollowing(offset int64) int {
 	block := offset / f.blkSize
 	if block*f.blkSize != offset {
 		// wrong offset (not block aligned), don't care
@@ -22,10 +19,21 @@ func (f *File) WantsFollowing(offset int64) int {
 	return int(f.blkSize)
 }
 
-func (f *File) FirstMissing() int64 {
-	f.lk.Lock()
-	defer f.lk.Unlock()
+func (f *File) getBlockCount() int64 {
+	// computer number of blocks
+	blkCount := f.size / f.blkSize
+	if f.size%f.blkSize != 0 {
+		blkCount += 1
+	}
 
+	return blkCount
+}
+
+func (f *File) isComplete() bool {
+	return int64(f.status.GetCardinality()) == f.getBlockCount()
+}
+
+func (f *File) firstMissing() int64 {
 	if f.complete {
 		// nothing to download
 		return -1
@@ -69,14 +77,7 @@ func (f *File) FirstMissing() int64 {
 	return -1
 }
 
-func (f *File) IngestData(b []byte, offset int64) error {
-	f.lk.Lock()
-	defer f.lk.Unlock()
-
-	return f.feed(b, offset)
-}
-
-func (f *File) feed(b []byte, offset int64) error {
+func (f *File) ingestData(b []byte, offset int64) error {
 	if !f.hasSize {
 		return errors.New("invalid operation, file size unknown")
 	}

@@ -11,10 +11,11 @@ import (
 )
 
 type dlClient struct {
-	dlm     *DownloadManager
-	url     string
-	taskCnt uintptr // currently running/pending tasks
-	handler DownloadTarget
+	dlm      *DownloadManager
+	url      string
+	taskCnt  uintptr // currently running/pending tasks
+	handler  *File
+	complete bool
 
 	reader *http.Response
 	rPos   int64 // in bytes
@@ -38,14 +39,13 @@ func (dl *dlClient) Close() error {
 }
 
 func (dl *dlClient) dropDataCount(cnt, startPos int64) error {
-	feeder, ok := dl.handler.(downloadFeed)
-	if !ok {
+	if dl.handler == nil {
 		_, err := io.CopyN(nullWriter{}, dl.reader.Body, cnt)
 		return err
 	}
 
 	// download data in buffers
-	sz := feeder.getBlockSize()
+	sz := dl.handler.getBlockSize()
 	if sz <= 0 || cnt < sz {
 		// doesn't want data?
 		_, err := io.CopyN(nullWriter{}, dl.reader.Body, cnt)
@@ -68,7 +68,7 @@ func (dl *dlClient) dropDataCount(cnt, startPos int64) error {
 
 		cnt -= sz
 
-		err = feeder.feed(buf, startPos)
+		err = dl.handler.ingestData(buf, startPos)
 		if err != nil {
 			// give up
 			_, err := io.CopyN(nullWriter{}, dl.reader.Body, cnt)
@@ -159,11 +159,13 @@ func (dl *dlClient) idleTaskRun() {
 	// increase timer now to avoid deletion
 	dl.expire = time.Now().Add(time.Minute)
 
+	dl.handler.lk.Lock()
+	defer dl.handler.lk.Unlock()
 	dl.lk.Lock()
 	defer dl.lk.Unlock()
 
 	if dl.reader != nil {
-		cnt := dl.handler.WantsFollowing(dl.rPos)
+		cnt := dl.handler.wantsFollowing(dl.rPos)
 		if cnt > 0 {
 			rPos := dl.rPos
 			// let's just read this from existing reader
@@ -177,7 +179,7 @@ func (dl *dlClient) idleTaskRun() {
 			dl.rPos += int64(n)
 
 			// feed it
-			err = dl.handler.IngestData(buf[:n], rPos)
+			err = dl.handler.ingestData(buf[:n], rPos)
 			if err != nil {
 				log.Printf("idle write failed: %s", err)
 			}
@@ -189,9 +191,12 @@ func (dl *dlClient) idleTaskRun() {
 	}
 
 	// let's just ask where to start
-	off := dl.handler.FirstMissing()
+	off := dl.handler.firstMissing()
 	if off < 0 {
 		// do not download
+		if dl.handler.isComplete() {
+			dl.complete = true
+		}
 		return
 	}
 
@@ -219,7 +224,7 @@ func (dl *dlClient) idleTaskRun() {
 	dl.reader = resp
 	dl.rPos = off
 
-	cnt := dl.handler.WantsFollowing(off)
+	cnt := dl.handler.wantsFollowing(off)
 	if cnt <= 0 {
 		// why?
 		return
@@ -235,11 +240,9 @@ func (dl *dlClient) idleTaskRun() {
 	dl.rPos += int64(n)
 
 	// feed it (use separate thread to avoid deadlock)
-	go func() {
-		err = dl.handler.IngestData(buf[:n], off)
-		if err != nil {
-			log.Printf("idle write failed: %s", err)
-		}
-	}()
+	err = dl.handler.ingestData(buf[:n], off)
+	if err != nil {
+		log.Printf("idle write failed: %s", err)
+	}
 	return
 }
