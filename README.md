@@ -19,11 +19,10 @@ How to use:
 ```
 
 This can be used with any kind of file as long as the server supports resume.
-If it doesn't then this will not work (yet. In the future it'll just download
-the whole file, but for now it just doesn't work).
+If it doesn't then this will just download the whole file, and still work the
+same.
 
 # TODO
 
-* When idle, we should continue to download files and attempt to complete them
 * Add support for file data verification (hashes, etc)
 * Add support for file offsets
