@@ -30,18 +30,28 @@ func (f *File) getBlockCount() int64 {
 }
 
 func (f *File) isComplete() bool {
-	return int64(f.status.GetCardinality()) == f.getBlockCount()
+	if f.complete {
+		return true
+	}
+	if f.status.IsEmpty() {
+		return false
+	}
+
+	if int64(f.status.GetCardinality()) != f.getBlockCount() {
+		return false
+	}
+
+	log.Printf("idle: file is now complete, marking as such")
+
+	f.complete = true
+		f.savePart()
+
+	return true
 }
 
 func (f *File) firstMissing() int64 {
-	if f.complete {
-		// nothing to download
+	if f.isComplete() {
 		return -1
-	}
-
-	if f.status.IsEmpty() {
-		// everything to download
-		return 0
 	}
 
 	err := f.getSize()
@@ -50,19 +60,8 @@ func (f *File) firstMissing() int64 {
 		return -1 // can't be helped
 	}
 
-	// computer number of blocks
-	blkCount := f.size / f.blkSize
-	if f.size%f.blkSize != 0 {
-		blkCount += 1
-	}
-
-	if int64(f.status.GetCardinality()) == blkCount {
-		log.Printf("idle: file is now complete, marking as such")
-		// we already have all blocks
-		f.complete = true
-		f.savePart()
-		return -1
-	}
+	// get number of blocks
+	blkCount := f.getBlockCount()
 
 	// find out first missing block
 	// TODO this can probably be optimized, roaring api may have something
