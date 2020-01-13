@@ -76,17 +76,36 @@ func (f *File) IngestData(b []byte, offset int64) error {
 }
 
 func (f *File) feed(b []byte, offset int64) error {
+	if !f.hasSize {
+		return errors.New("invalid operation, file size unknown")
+	}
+
 	block := offset / f.blkSize
-	if block*f.blkSize != offset {
+	if offset%f.blkSize != 0 {
 		return errors.New("invalid offset (not block aligned)")
 	}
-	count := int64(len(b)) / f.blkSize
-	if f.blkSize*count != int64(len(b)) {
-		if count > 1 {
-			// trim
-			b = b[:count*f.blkSize]
-		} else {
-			return errors.New("invalid buffer length (not block aligned)")
+
+	blkCount := f.size / f.blkSize
+	if f.size%f.blkSize != 0 {
+		blkCount += 1
+	}
+
+	if block >= blkCount {
+		return errors.New("invalid offset (over EOF)")
+	}
+
+	if block == blkCount-1 {
+		// last block
+		lastBlockSize := f.size % f.blkSize
+		if lastBlockSize == 0 {
+			lastBlockSize = f.blkSize
+		}
+		if int64(len(b)) != lastBlockSize {
+			return errors.New("invalid buffer length (invalid final block size)")
+		}
+	} else {
+		if int64(len(b)) != f.blkSize {
+			return errors.New("invalid buffer length (not block size)")
 		}
 	}
 
@@ -96,7 +115,9 @@ func (f *File) feed(b []byte, offset int64) error {
 	}
 
 	// mark blocks as received
-	f.status.AddRange(uint64(block), uint64(block+count)) // [rangeStart, rangeEnd)
+	f.status.Add(uint32(block))
+
+	f.savePart()
 
 	return nil
 }
