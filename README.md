@@ -5,7 +5,7 @@
 
 # SmartRemote
 
-NOTE: this is not a remote for your TV, just a smart way to access remote files.
+NOTE: this is not a remote for your TV, just an easy way to access remote (http) files.
 
 How to use:
 
