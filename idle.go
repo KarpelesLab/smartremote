@@ -44,7 +44,7 @@ func (f *File) isComplete() bool {
 	log.Printf("idle: file is now complete, marking as such")
 
 	f.complete = true
-		f.savePart()
+	f.savePart()
 
 	return true
 }

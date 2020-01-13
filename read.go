@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 )
 
 func (f *File) getSize() error {
@@ -67,7 +68,20 @@ func (f *File) GetSize() (int64, error) {
 	return f.size, nil
 }
 
-// Seek in file for next Read() operation.
+// Stat() will obtain the information of the underlying file after checking
+// its size matches that of the file to download.
+func (f *File) Stat() (os.FileInfo, error) {
+	_, err := f.GetSize()
+	if err != nil {
+		return nil, err
+	}
+
+	return f.local.Stat()
+}
+
+// Seek in file for next Read() operation. If you use io.SeekEnd but the file
+// download hasn't started, a HEAD request will be made to obtain the file's
+// size.
 func (f *File) Seek(offset int64, whence int) (int64, error) {
 	f.lk.Lock()
 	defer f.lk.Unlock()
@@ -101,6 +115,8 @@ func (f *File) Seek(offset int64, whence int) (int64, error) {
 	}
 }
 
+// Read will read data from the file at the current position after checking
+// it was successfully downloaded.
 func (f *File) Read(p []byte) (n int, err error) {
 	// read data
 	f.lk.Lock()
@@ -113,6 +129,8 @@ func (f *File) Read(p []byte) (n int, err error) {
 	return
 }
 
+// ReadAt will read data from the disk at a specified offset after checking
+// it was successfully downloaded.
 func (f *File) ReadAt(p []byte, off int64) (int, error) {
 	f.lk.Lock()
 	defer f.lk.Unlock()

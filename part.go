@@ -6,6 +6,9 @@ import (
 	"os"
 )
 
+// SavePart triggers an immediate save of the download status to a .part file
+// on disk, allowing resume to happen if the program terminates and is opened
+// again.
 func (f *File) SavePart() error {
 	f.lk.Lock()
 	defer f.lk.Unlock()
