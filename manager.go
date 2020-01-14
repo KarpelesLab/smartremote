@@ -9,13 +9,6 @@ import (
 	"time"
 )
 
-type downloadFeed interface {
-	// feed intake can only be called during downloads for locking reasons
-	// it does the same as IngestData() but without the lock, which is already acquired during download
-	feed(b []byte, offset int64) error
-	getBlockSize() int64
-}
-
 type DownloadManager struct {
 	// MaxConcurrent is the maximum number of concurrent downloads.
 	// changing it might not be effective immediately. Default is 10
