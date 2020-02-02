@@ -46,16 +46,23 @@ func (f *File) getSize() error {
 
 	// might want to check for "Accept-Ranges" header
 
-	f.hasSize = true
 	f.size = res.ContentLength
+	f.hasSize = true
 	f.local.Truncate(f.size)
 
 	return nil
 }
 
 func (f *File) SetSize(size int64) {
+	if f.complete {
+		// do not allow SetSize() on complete files
+		return
+	}
+
+	// set size and truncate
 	f.size = size
 	f.hasSize = true
+	f.local.Truncate(f.size)
 }
 
 // GetSize returns a file's size according to the remote server.
