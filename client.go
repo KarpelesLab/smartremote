@@ -153,7 +153,11 @@ func (dl *dlClient) idleTaskRun() {
 	defer func() {
 		atomic.AddUintptr(&dl.taskCnt, ^uintptr(0))
 		atomic.AddUintptr(&dl.dlm.taskCnt, ^uintptr(0))
-		dl.dlm.idleTrigger <- struct{}{}
+		// do not block
+		select {
+		case dl.dlm.idleTrigger <- struct{}{}:
+		default:
+		}
 	}()
 
 	// increase timer now to avoid deletion
