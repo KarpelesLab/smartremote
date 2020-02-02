@@ -53,6 +53,11 @@ func (f *File) getSize() error {
 	return nil
 }
 
+func (f *File) SetSize(size int64) {
+	f.size = size
+	f.hasSize = true
+}
+
 // GetSize returns a file's size according to the remote server.
 func (f *File) GetSize() (int64, error) {
 	f.lk.Lock()
