@@ -11,7 +11,7 @@ import (
 
 func TestZIP(t *testing.T) {
 	// open a random .zip file off internet (a big one)
-	f, err := Open("http://ftp.jaist.ac.jp/pub/qtproject/archive/qt/5.2/5.2.1/submodules/qtmultimedia-opensource-src-5.2.1.zip")
+	f, err := Open("http://ftp.jaist.ac.jp/pub/qtproject/archive/qt/5.14/5.14.1/submodules/qtmultimedia-everywhere-src-5.14.1.zip")
 	//f, err := Open("http://ftp.jaist.ac.jp/pub/qtproject/archive/qt/5.2/5.2.1/single/qt-everywhere-opensource-src-5.2.1.zip")
 	if err != nil {
 		t.Fatalf("unable to create smartremote object: %s", err)
@@ -38,7 +38,7 @@ func TestZIP(t *testing.T) {
 
 	// let's read file qtmultimedia-opensource-src-5.2.1/src/src.pro
 	for _, fl := range r.File {
-		if fl.Name == "qtmultimedia-opensource-src-5.2.1/src/src.pro" {
+		if fl.Name == "qtmultimedia-opensource-src-5.14.1/src/src.pro" {
 			subfl, err := fl.Open()
 			if err != nil {
 				t.Fatalf("failed to open file: %s", err)
