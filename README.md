@@ -24,5 +24,5 @@ same.
 
 # TODO
 
-* Add support for file data verification (hashes, etc)
-* Add support for file offsets
+* Add support for range invalidation (bad checksum causes re-download of affected area)
+* Refactor idle downloader for better performances
