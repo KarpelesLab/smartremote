@@ -55,4 +55,10 @@ func TestZIP(t *testing.T) {
 			}
 		}
 	}
+
+	log.Printf("trying to download whole file")
+	err = f.Complete()
+	if err != nil {
+		t.Fatalf("error downloading: %s", err)
+	}
 }
