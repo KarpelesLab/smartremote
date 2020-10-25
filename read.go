@@ -184,3 +184,37 @@ func (f *File) readAt(p []byte, off int64) (int, error) {
 	// let the OS handle the rest
 	return f.local.ReadAt(p, off)
 }
+
+// Complete will download the whole file locally, returning errors in case of
+// failure.
+func (f *File) Complete() error {
+	// read data
+	f.lk.Lock()
+	defer f.lk.Unlock()
+
+	if f.complete {
+		// file is complete, no need to do anything
+		return nil
+	}
+
+	// get size
+	err := f.getSize()
+	if err != nil {
+		return err
+	}
+
+	blkCount := uint32(f.getBlockCount())
+
+	// find out first missing blocks
+	for i := uint32(0); i < blkCount; i++ {
+		if !f.status.Contains(uint32(i)) {
+			err = f.needBlocks(i, i)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	f.isComplete()
+
+	return nil
+}

@@ -2,7 +2,6 @@ package smartremote
 
 import (
 	"errors"
-	"log"
 )
 
 func (f *File) wantsFollowing(offset int64) int {
@@ -41,7 +40,7 @@ func (f *File) isComplete() bool {
 		return false
 	}
 
-	log.Printf("idle: file is now complete, marking as such")
+	f.dlm.logf("file is now complete, marking as such")
 
 	f.complete = true
 	f.savePart()
@@ -56,7 +55,7 @@ func (f *File) firstMissing() int64 {
 
 	err := f.getSize()
 	if err != nil {
-		log.Printf("failed to get file size: %s", err)
+		f.dlm.logf("failed to get file size: %s", err)
 		return -1 // can't be helped
 	}
 

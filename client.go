@@ -3,7 +3,6 @@ package smartremote
 import (
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -119,7 +118,7 @@ func (dl *dlClient) ReadAt(p []byte, off int64) (int, error) {
 			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
 		}
 
-		log.Printf("initializing HTTP connection download at byte %d~", off)
+		dl.dlm.logf("initializing HTTP connection download at byte %d~", off)
 
 		// should respond with code 206 Partial Content
 		resp, err := dl.dlm.Client.Do(req)
@@ -176,7 +175,7 @@ func (dl *dlClient) idleTaskRun() {
 			buf := make([]byte, cnt)
 			n, err := io.ReadFull(dl.reader.Body, buf)
 			if err != nil && err != io.ErrUnexpectedEOF {
-				log.Printf("idle read failed: %s", err)
+				dl.dlm.logf("idle read failed: %s", err)
 				dl.reader.Body.Close()
 				dl.reader = nil
 			}
@@ -185,7 +184,7 @@ func (dl *dlClient) idleTaskRun() {
 			// feed it
 			err = dl.handler.ingestData(buf[:n], rPos)
 			if err != nil {
-				log.Printf("idle write failed: %s", err)
+				dl.dlm.logf("idle write failed: %s", err)
 			}
 			return
 		}
@@ -211,18 +210,18 @@ func (dl *dlClient) idleTaskRun() {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
 	}
 
-	log.Printf("idle: initializing HTTP connection download at byte %d~", off)
+	dl.dlm.logf("idle: initializing HTTP connection download at byte %d~", off)
 
 	// should respond with code 206 Partial Content
 	resp, err := dl.dlm.Client.Do(req)
 	if err != nil {
-		log.Printf("idle download failed: %s", err)
+		dl.dlm.logf("idle download failed: %s", err)
 		return
 	}
 	if resp.StatusCode > 299 {
 		// that's bad
 		resp.Body.Close()
-		log.Printf("idle download failed due to status %s", resp.Status)
+		dl.dlm.logf("idle download failed due to status %s", resp.Status)
 		return
 	}
 	dl.reader = resp
@@ -237,7 +236,7 @@ func (dl *dlClient) idleTaskRun() {
 	buf := make([]byte, cnt)
 	n, err := io.ReadFull(dl.reader.Body, buf)
 	if err != nil && err != io.ErrUnexpectedEOF {
-		log.Printf("idle read failed: %s", err)
+		dl.dlm.logf("idle read failed: %s", err)
 		dl.reader.Body.Close()
 		dl.reader = nil
 	}
@@ -246,7 +245,7 @@ func (dl *dlClient) idleTaskRun() {
 	// feed it (use separate thread to avoid deadlock)
 	err = dl.handler.ingestData(buf[:n], off)
 	if err != nil {
-		log.Printf("idle write failed: %s", err)
+		dl.dlm.logf("idle write failed: %s", err)
 	}
 	return
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 )
 
 func (f *File) downloadFull() error {
@@ -60,7 +59,7 @@ func (f *File) needBlocks(start, end uint32) error {
 
 	// trim start/end based on known downloaded blocks
 	for {
-		if f.status.Contains(start) && (start < end) {
+		if (start < end) && f.status.Contains(start) {
 			start += 1
 		} else {
 			break
@@ -68,7 +67,7 @@ func (f *File) needBlocks(start, end uint32) error {
 	}
 
 	for {
-		if f.status.Contains(end) && (end > start) {
+		if (end > start) && f.status.Contains(end) {
 			end -= 1
 		} else {
 			break
@@ -92,10 +91,10 @@ func (f *File) needBlocks(start, end uint32) error {
 			n = f.size - posByte
 		}
 
-		//log.Printf("downloading block %d (%d bytes)", start, n)
+		//f.dlm.logf("downloading block %d (%d bytes)", start, n)
 		_, err := f.dlm.readUrl(f.url, buf[:n], posByte, f)
 		if err != nil {
-			log.Printf("download error: %s", err)
+			f.dlm.logf("download error: %s", err)
 			if f.status.IsEmpty() && posByte != 0 {
 				// this is typically linked to backend refusing to let us do partial download
 				return f.downloadFull()
@@ -109,7 +108,7 @@ func (f *File) needBlocks(start, end uint32) error {
 		_, err = f.local.WriteAt(buf[:n], posByte)
 		if err != nil {
 			// failed to write (disk full?)
-			log.Printf("write error: %s", err)
+			f.dlm.logf("write error: %s", err)
 			return err
 		}
 

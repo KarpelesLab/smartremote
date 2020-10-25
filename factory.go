@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -80,7 +79,7 @@ func (dlm *DownloadManager) OpenTo(u, localPath string) (*File, error) {
 			}
 			err = f.readPart()
 			if err != nil {
-				log.Printf("failed to resume download: %s", err)
+				dlm.logf("failed to resume download: %s", err)
 				// truncate
 				fp.Truncate(0)
 			}

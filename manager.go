@@ -2,6 +2,7 @@ package smartremote
 
 import (
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"sync"
@@ -32,6 +33,8 @@ type DownloadManager struct {
 
 	openFiles   map[[32]byte]*File
 	openFilesLk sync.RWMutex
+
+	*log.Logger
 }
 
 type dlReaderAt struct {
@@ -50,6 +53,7 @@ func NewDownloadManager() *DownloadManager {
 		clients:       make(map[string]*dlClient),
 		openFiles:     make(map[[32]byte]*File),
 		idleTrigger:   make(chan struct{}),
+		Logger:        log.New(os.Stderr, "", log.LstdFlags),
 	}
 	dl.cd = sync.NewCond(&dl.mapLock)
 
@@ -174,5 +178,11 @@ func (dl *DownloadManager) internalReap() {
 			cl.Close()
 			break
 		}
+	}
+}
+
+func (dl *DownloadManager) logf(format string, args ...interface{}) {
+	if dl.Logger != nil {
+		dl.Logger.Printf(format, args...)
 	}
 }
