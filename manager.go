@@ -145,7 +145,7 @@ func (dlm *DownloadManager) intervalProcess() bool {
 			continue
 		}
 
-		if cl.complete || cl.expire.Before(now) {
+		if cl.complete || cl.failure || cl.expire.Before(now) {
 			delete(dlm.clients, u)
 			go cl.Close() // let close run in thread so we don't get locked
 			change = true

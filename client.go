@@ -14,6 +14,7 @@ type dlClient struct {
 	url      string
 	taskCnt  uintptr // currently running/pending tasks
 	handler  *File
+	failure  bool
 	complete bool
 
 	reader *http.Response
@@ -185,6 +186,7 @@ func (dl *dlClient) idleTaskRun() {
 			err = dl.handler.ingestData(buf[:n], rPos)
 			if err != nil {
 				dl.dlm.logf("idle write failed: %s", err)
+				dl.failure = true
 			}
 			return
 		}
@@ -246,6 +248,7 @@ func (dl *dlClient) idleTaskRun() {
 	err = dl.handler.ingestData(buf[:n], off)
 	if err != nil {
 		dl.dlm.logf("idle write failed: %s", err)
+		dl.failure = true
 	}
 	return
 }
