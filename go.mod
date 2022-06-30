@@ -1,4 +1,4 @@
-module github.com/KarpelesLab/smartremote.git
+module github.com/KarpelesLab/smartremote
 
 go 1.18
 
