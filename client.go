@@ -282,6 +282,7 @@ func (dl *dlClient) closeLRUReader() {
 // idleTaskRun is called during idle periods to download missing blocks
 // in the background. It runs in a separate goroutine and downloads multiple
 // consecutive blocks until approximately 1 second has elapsed.
+// It releases locks during I/O to avoid blocking user ReadAt calls.
 func (dl *dlClient) idleTaskRun() {
 	defer func() {
 		atomic.AddUintptr(&dl.taskCnt, ^uintptr(0))
@@ -293,119 +294,148 @@ func (dl *dlClient) idleTaskRun() {
 		}
 	}()
 
-	dl.handler.lk.Lock()
-	defer dl.handler.lk.Unlock()
-	dl.lk.Lock()
-	defer dl.lk.Unlock()
-
-	// increase timer now to avoid deletion
-	dl.expire = time.Now().Add(time.Minute)
-
 	startTime := time.Now()
 	blocksDownloaded := 0
-	blkSize := dl.handler.getBlockSize()
-	buf := make([]byte, blkSize)
+	var buf []byte
 
-	// Helper to save progress if we downloaded anything
+	// Save progress at the end if we downloaded anything
 	defer func() {
 		if blocksDownloaded > 0 {
+			dl.handler.lk.Lock()
 			dl.handler.savePart()
+			dl.handler.lk.Unlock()
 			dl.dlm.logf("idle: downloaded %d blocks in %v", blocksDownloaded, time.Since(startTime))
 		}
 	}()
 
-	// Find or create a reader for idle downloading
-	// Try to find an existing reader at a useful position first
-	var idleReader *httpReader
-	for _, r := range dl.readers {
-		if r == nil || r.resp == nil {
-			continue
-		}
-		cnt := dl.handler.wantsFollowing(r.pos)
-		if cnt > 0 {
-			idleReader = r
-			break
-		}
-	}
-
 	// Download blocks until ~1 second has passed
 	for time.Since(startTime) < time.Second {
-		// Check if we have an existing reader at a useful position
-		if idleReader != nil && idleReader.resp != nil {
-			cnt := dl.handler.wantsFollowing(idleReader.pos)
-			if cnt <= 0 {
-				// Current position already downloaded, close and find new position
-				idleReader.resp.Body.Close()
-				dl.removeReader(idleReader)
-				idleReader = nil
+		// Acquire locks to find/take a reader
+		dl.handler.lk.Lock()
+		dl.lk.Lock()
+
+		dl.expire = time.Now().Add(time.Minute)
+
+		// Initialize buffer on first iteration
+		if buf == nil {
+			buf = make([]byte, dl.handler.getBlockSize())
+		}
+
+		// Find and take a reader at a useful position
+		var idleReader *httpReader
+		for i, r := range dl.readers {
+			if r == nil || r.resp == nil {
 				continue
 			}
-
-			// Read the block
-			rPos := idleReader.pos
-			readBuf := buf[:cnt]
-			n, err := io.ReadFull(idleReader.resp.Body, readBuf)
-			if err != nil && err != io.ErrUnexpectedEOF {
-				dl.dlm.logf("idle read failed: %s", err)
-				idleReader.resp.Body.Close()
-				dl.removeReader(idleReader)
-				idleReader = nil
-				if n == 0 {
-					continue
-				}
+			cnt := dl.handler.wantsFollowing(r.pos)
+			if cnt > 0 {
+				idleReader = r
+				// Remove from slice - we're taking ownership
+				dl.readers = append(dl.readers[:i], dl.readers[i+1:]...)
+				break
 			}
-			idleReader.pos += int64(n)
-			idleReader.lastAccess = time.Now()
+		}
 
-			// Ingest without saving (we'll save once at the end)
-			err = dl.handler.ingestDataBatch(readBuf[:n], rPos)
-			if err != nil {
-				dl.dlm.logf("idle write failed: %s", err)
-				dl.failure = true
+		// If no suitable reader, find first missing block and create one
+		var off int64 = -1
+		if idleReader == nil {
+			off = dl.handler.firstMissing()
+			if off < 0 {
+				if dl.handler.isComplete() {
+					dl.complete = true
+				}
+				dl.lk.Unlock()
+				dl.handler.lk.Unlock()
 				return
 			}
-			blocksDownloaded++
+		}
+
+		// Release locks before I/O
+		dl.lk.Unlock()
+		dl.handler.lk.Unlock()
+
+		// Create new reader if needed (outside of lock)
+		if idleReader == nil {
+			req, err := http.NewRequest("GET", dl.url, nil)
+			if err != nil {
+				dl.dlm.logf("idle: failed to create request: %s", err)
+				return
+			}
+
+			if off != 0 {
+				req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
+			}
+
+			dl.dlm.logf("idle: initializing HTTP connection download at byte %d~", off)
+
+			resp, err := dl.dlm.Client.Do(req)
+			if err != nil {
+				dl.dlm.logf("idle download failed: %s", err)
+				return
+			}
+			if resp.StatusCode > 299 {
+				resp.Body.Close()
+				dl.dlm.logf("idle download failed due to status %s", resp.Status)
+				return
+			}
+
+			idleReader = &httpReader{
+				resp:       resp,
+				pos:        off,
+				lastAccess: time.Now(),
+			}
+		}
+
+		// Read a block (outside of lock)
+		dl.handler.lk.RLock()
+		cnt := dl.handler.wantsFollowing(idleReader.pos)
+		dl.handler.lk.RUnlock()
+
+		if cnt <= 0 {
+			// Position already downloaded, close reader and continue
+			idleReader.resp.Body.Close()
 			continue
 		}
 
-		// No reader, find first missing block
-		off := dl.handler.firstMissing()
-		if off < 0 {
-			if dl.handler.isComplete() {
-				dl.complete = true
+		readBuf := buf[:cnt]
+		rPos := idleReader.pos
+		n, err := io.ReadFull(idleReader.resp.Body, readBuf)
+		if err != nil && err != io.ErrUnexpectedEOF {
+			dl.dlm.logf("idle read failed: %s", err)
+			idleReader.resp.Body.Close()
+			if n == 0 {
+				continue
 			}
-			return
 		}
+		idleReader.pos += int64(n)
+		idleReader.lastAccess = time.Now()
 
-		// Create new reader for idle downloading (don't count against MaxReadersPerFile limit)
-		req, err := http.NewRequest("GET", dl.url, nil)
+		// Ingest the data (needs lock)
+		dl.handler.lk.Lock()
+		err = dl.handler.ingestDataBatch(readBuf[:n], rPos)
+		dl.handler.lk.Unlock()
+
 		if err != nil {
-			dl.dlm.logf("idle: failed to create request: %s", err)
+			dl.dlm.logf("idle write failed: %s", err)
+			idleReader.resp.Body.Close()
+			dl.lk.Lock()
+			dl.failure = true
+			dl.lk.Unlock()
 			return
 		}
+		blocksDownloaded++
 
-		if off != 0 {
-			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
-		}
+		// Return reader to the pool if still useful, otherwise close it
+		dl.handler.lk.RLock()
+		stillUseful := dl.handler.wantsFollowing(idleReader.pos) > 0
+		dl.handler.lk.RUnlock()
 
-		dl.dlm.logf("idle: initializing HTTP connection download at byte %d~", off)
-
-		resp, err := dl.dlm.Client.Do(req)
-		if err != nil {
-			dl.dlm.logf("idle download failed: %s", err)
-			return
+		if stillUseful {
+			dl.lk.Lock()
+			dl.readers = append(dl.readers, idleReader)
+			dl.lk.Unlock()
+		} else {
+			idleReader.resp.Body.Close()
 		}
-		if resp.StatusCode > 299 {
-			resp.Body.Close()
-			dl.dlm.logf("idle download failed due to status %s", resp.Status)
-			return
-		}
-
-		idleReader = &httpReader{
-			resp:       resp,
-			pos:        off,
-			lastAccess: time.Now(),
-		}
-		dl.readers = append(dl.readers, idleReader)
 	}
 }
