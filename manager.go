@@ -19,6 +19,11 @@ type DownloadManager struct {
 	// changing it might not be effective immediately. Default is 10
 	MaxConcurrent int
 
+	// MaxReadersPerFile is the maximum number of concurrent HTTP connections
+	// per file. This allows efficient random access patterns (e.g., ZIP files).
+	// Default is 3.
+	MaxReadersPerFile int
+
 	// Client is the http client used to access urls to be downloaded
 	Client *http.Client
 
@@ -26,7 +31,7 @@ type DownloadManager struct {
 	TmpDir string
 
 	// MaxDataJump is the maximum data that can be read & dropped when seeking forward
-	// default is 128k
+	// default is 512kB
 	MaxDataJump int64
 
 	clients     map[string]*dlClient
@@ -58,14 +63,15 @@ var DefaultDownloadManager = NewDownloadManager()
 // background goroutine for connection management and idle downloading.
 func NewDownloadManager() *DownloadManager {
 	dl := &DownloadManager{
-		MaxConcurrent: 10,
-		Client:        http.DefaultClient,
-		TmpDir:        os.TempDir(),
-		MaxDataJump:   512 * 1024, // 512kB
-		clients:       make(map[string]*dlClient),
-		openFiles:     make(map[[32]byte]*File),
-		idleTrigger:   make(chan struct{}),
-		Logger:        log.New(os.Stderr, "", log.LstdFlags),
+		MaxConcurrent:     10,
+		MaxReadersPerFile: 3,
+		Client:            http.DefaultClient,
+		TmpDir:            os.TempDir(),
+		MaxDataJump:       512 * 1024, // 512kB
+		clients:           make(map[string]*dlClient),
+		openFiles:         make(map[[32]byte]*File),
+		idleTrigger:       make(chan struct{}),
+		Logger:            log.New(os.Stderr, "", log.LstdFlags),
 	}
 	dl.cd = sync.NewCond(&dl.mapLock)
 

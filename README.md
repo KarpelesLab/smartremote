@@ -163,6 +163,7 @@ if err != nil {
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `MaxConcurrent` | `int` | 10 | Maximum number of concurrent HTTP connections |
+| `MaxReadersPerFile` | `int` | 3 | Maximum HTTP connections per file for random access patterns (e.g., ZIP files) |
 | `MaxDataJump` | `int64` | 512KB | Maximum bytes to read and discard when seeking forward (vs opening a new connection) |
 | `TmpDir` | `string` | `os.TempDir()` | Directory for temporary download files |
 | `Client` | `*http.Client` | `http.DefaultClient` | HTTP client for making requests |
