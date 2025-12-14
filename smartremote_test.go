@@ -44,15 +44,6 @@ func newTestServer() *httptest.Server {
 	}))
 }
 
-// newTestServerNoRange creates an HTTP server without Range support
-func newTestServerNoRange() *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Length", itoa(int64(len(testData))))
-		w.WriteHeader(http.StatusOK)
-		w.Write(testData)
-	}))
-}
-
 // newTestServerNoHead creates an HTTP server that rejects HEAD requests
 func newTestServerNoHead() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

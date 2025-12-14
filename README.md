@@ -214,4 +214,3 @@ On close:
 ## TODO
 
 - Add support for range invalidation (bad checksum causes re-download of affected area)
-- Refactor idle downloader for better performance

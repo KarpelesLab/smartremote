@@ -67,26 +67,54 @@ func (f *File) firstMissing() int64 {
 		return -1 // can't be helped
 	}
 
-	// get number of blocks
 	blkCount := f.getBlockCount()
 
-	// find out first missing block
-	// TODO this can probably be optimized, roaring api may have something
-	for i := int64(0); i < blkCount; i++ {
-		if !f.status.Contains(uint32(i)) {
-			return i * f.blkSize
+	// If bitmap is empty, first missing is block 0
+	if f.status.IsEmpty() {
+		return 0
+	}
+
+	// Use iterator to efficiently find first gap in downloaded blocks.
+	// The iterator returns set bits in ascending order, so we look for
+	// the first position where the expected sequence breaks.
+	it := f.status.Iterator()
+	expected := uint32(0)
+
+	for it.HasNext() {
+		val := it.Next()
+		if val > expected {
+			// Found a gap - 'expected' is the first missing block
+			return int64(expected) * f.blkSize
+		}
+		expected = val + 1
+		if int64(expected) >= blkCount {
+			// We've covered all blocks we need
+			break
 		}
 	}
 
-	// ?????
-	// did we have more blocks in status than we need? did file size change? this sounds like everything is likely corrupted...
+	// Check if there are blocks after the last downloaded block
+	if int64(expected) < blkCount {
+		return int64(expected) * f.blkSize
+	}
+
 	return -1
 }
 
 // ingestData writes a block of data to the local file at the specified offset.
 // The offset must be block-aligned and the data must be exactly one block in size
-// (or the correct size for the final block).
+// (or the correct size for the final block). This method saves progress to disk.
 func (f *File) ingestData(b []byte, offset int64) error {
+	if err := f.ingestDataBatch(b, offset); err != nil {
+		return err
+	}
+	f.savePart()
+	return nil
+}
+
+// ingestDataBatch writes a block of data without saving progress to disk.
+// Use this for batch operations, then call savePart() once at the end.
+func (f *File) ingestDataBatch(b []byte, offset int64) error {
 	if !f.hasSize {
 		return errors.New("invalid operation, file size unknown")
 	}
@@ -125,10 +153,8 @@ func (f *File) ingestData(b []byte, offset int64) error {
 		return err
 	}
 
-	// mark blocks as received
+	// mark block as received
 	f.status.Add(uint32(block))
-
-	f.savePart()
 
 	return nil
 }
