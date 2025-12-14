@@ -1,5 +1,5 @@
-[![Build Status](https://travis-ci.org/KarpelesLab/smartremote.svg)](https://travis-ci.org/KarpelesLab/smartremote)
-[![GoDoc](https://godoc.org/github.com/KarpelesLab/smartremote?status.svg)](https://godoc.org/github.com/KarpelesLab/smartremote)
+[![Test](https://github.com/KarpelesLab/smartremote/actions/workflows/test.yml/badge.svg)](https://github.com/KarpelesLab/smartremote/actions/workflows/test.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/KarpelesLab/smartremote.svg)](https://pkg.go.dev/github.com/KarpelesLab/smartremote)
 [![Coverage Status](https://coveralls.io/repos/github/KarpelesLab/smartremote/badge.svg?branch=master)](https://coveralls.io/github/KarpelesLab/smartremote?branch=master)
 
 # SmartRemote
