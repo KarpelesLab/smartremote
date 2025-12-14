@@ -173,13 +173,13 @@ func (dl *dlClient) idleTaskRun() {
 		}
 	}()
 
-	// increase timer now to avoid deletion
-	dl.expire = time.Now().Add(time.Minute)
-
 	dl.handler.lk.Lock()
 	defer dl.handler.lk.Unlock()
 	dl.lk.Lock()
 	defer dl.lk.Unlock()
+
+	// increase timer now to avoid deletion
+	dl.expire = time.Now().Add(time.Minute)
 
 	if dl.reader != nil {
 		cnt := dl.handler.wantsFollowing(dl.rPos)
