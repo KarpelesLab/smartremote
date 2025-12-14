@@ -8,6 +8,9 @@ import (
 	"os"
 )
 
+// getSize fetches the file size from the remote server via a HEAD request.
+// If the server doesn't support HEAD or doesn't return Content-Length,
+// it falls back to downloading the entire file.
 func (f *File) getSize() error {
 	// note: this should run in lock
 
@@ -53,6 +56,9 @@ func (f *File) getSize() error {
 	return nil
 }
 
+// SetSize manually sets the file size for incomplete files. This is useful
+// when the file size is known in advance but the server doesn't provide a
+// Content-Length header. Has no effect on complete files.
 func (f *File) SetSize(size int64) {
 	if f.complete {
 		// do not allow SetSize() on complete files
@@ -150,6 +156,8 @@ func (f *File) ReadAt(p []byte, off int64) (int, error) {
 	return f.readAt(p, off)
 }
 
+// readAt is the internal implementation of ReadAt. It ensures the required
+// blocks are downloaded before reading from the local file.
 func (f *File) readAt(p []byte, off int64) (int, error) {
 	if f.complete {
 		// file is complete, let the OS handle that

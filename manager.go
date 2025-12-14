@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+// DownloadManager orchestrates concurrent downloads and manages HTTP connections
+// for accessing remote files. It maintains a pool of download clients, handles
+// connection reuse, and coordinates background downloading of file blocks during
+// idle periods. A default manager is provided as DefaultDownloadManager.
 type DownloadManager struct {
 	// MaxConcurrent is the maximum number of concurrent downloads.
 	// changing it might not be effective immediately. Default is 10
@@ -37,13 +41,21 @@ type DownloadManager struct {
 	*log.Logger
 }
 
+// dlReaderAt is a simple wrapper that implements io.ReaderAt for a given URL
+// using the DownloadManager.
 type dlReaderAt struct {
 	dl  *DownloadManager
 	url string
 }
 
+// DefaultDownloadManager is the default DownloadManager used by package-level
+// functions like Open. It is initialized with sensible defaults.
 var DefaultDownloadManager = NewDownloadManager()
 
+// NewDownloadManager creates and returns a new DownloadManager with default
+// settings: 10 concurrent connections, 512KB maximum data jump for seeking,
+// and the system temp directory for temporary files. The manager starts a
+// background goroutine for connection management and idle downloading.
 func NewDownloadManager() *DownloadManager {
 	dl := &DownloadManager{
 		MaxConcurrent: 10,
@@ -62,14 +74,20 @@ func NewDownloadManager() *DownloadManager {
 	return dl
 }
 
+// For returns an io.ReaderAt interface for the given URL. This provides a
+// simple way to read from a remote URL at arbitrary offsets without managing
+// a File object. Each ReadAt call may open a new HTTP connection.
 func (dl *DownloadManager) For(u string) io.ReaderAt {
 	return &dlReaderAt{dl, u}
 }
 
+// ReadAt implements io.ReaderAt for dlReaderAt.
 func (dlr *dlReaderAt) ReadAt(p []byte, off int64) (int, error) {
 	return dlr.dl.readUrl(dlr.url, p, off, nil)
 }
 
+// readUrl reads data from a URL into p at the specified offset using the
+// download manager's connection pool.
 func (dlm *DownloadManager) readUrl(url string, p []byte, off int64, handler *File) (int, error) {
 	dl := dlm.getClient(url, handler)
 	defer atomic.AddUintptr(&dl.taskCnt, ^uintptr(0))
@@ -78,6 +96,8 @@ func (dlm *DownloadManager) readUrl(url string, p []byte, off int64, handler *Fi
 	return dl.ReadAt(p, off)
 }
 
+// getClient returns an existing or new dlClient for the given URL.
+// It waits if MaxConcurrent connections are already in use.
 func (dl *DownloadManager) getClient(u string, handler *File) *dlClient {
 	dl.mapLock.Lock()
 
@@ -114,6 +134,8 @@ func (dl *DownloadManager) getClient(u string, handler *File) *dlClient {
 	}
 }
 
+// managerTask is the background goroutine that periodically checks connections
+// and triggers idle downloading.
 func (dlm *DownloadManager) managerTask() {
 	t := time.NewTicker(time.Second)
 	for {
@@ -129,6 +151,8 @@ func (dlm *DownloadManager) managerTask() {
 	}
 }
 
+// intervalProcess handles periodic connection cleanup and idle task scheduling.
+// Returns true if the manager is idle (no clients).
 func (dlm *DownloadManager) intervalProcess() bool {
 	dlm.mapLock.Lock()
 	defer dlm.mapLock.Unlock()
@@ -168,6 +192,8 @@ func (dlm *DownloadManager) intervalProcess() bool {
 	return false
 }
 
+// internalReap attempts to close one idle client to free up a connection slot.
+// Caller must hold mapLock.
 func (dl *DownloadManager) internalReap() {
 	// attempt to reap at least one idle client
 	// (lock already acquired by caller)
@@ -181,6 +207,7 @@ func (dl *DownloadManager) internalReap() {
 	}
 }
 
+// logf logs a formatted message if a Logger is configured.
 func (dl *DownloadManager) logf(format string, args ...interface{}) {
 	if dl.Logger != nil {
 		dl.Logger.Printf(format, args...)

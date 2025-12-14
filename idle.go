@@ -4,6 +4,9 @@ import (
 	"errors"
 )
 
+// wantsFollowing returns the number of bytes to download starting at the
+// given offset if the block at that offset hasn't been downloaded yet.
+// Returns 0 if the offset is not block-aligned or the block is already present.
 func (f *File) wantsFollowing(offset int64) int {
 	block := offset / f.blkSize
 	if block*f.blkSize != offset {
@@ -18,6 +21,7 @@ func (f *File) wantsFollowing(offset int64) int {
 	return int(f.blkSize)
 }
 
+// getBlockCount returns the total number of blocks needed to store the file.
 func (f *File) getBlockCount() int64 {
 	// computer number of blocks
 	blkCount := f.size / f.blkSize
@@ -28,6 +32,8 @@ func (f *File) getBlockCount() int64 {
 	return blkCount
 }
 
+// isComplete checks if all blocks have been downloaded and marks the file
+// as complete if so. Returns true if the file is fully downloaded.
 func (f *File) isComplete() bool {
 	if f.complete {
 		return true
@@ -48,6 +54,8 @@ func (f *File) isComplete() bool {
 	return true
 }
 
+// firstMissing returns the byte offset of the first missing block,
+// or -1 if all blocks are downloaded.
 func (f *File) firstMissing() int64 {
 	if f.isComplete() {
 		return -1
@@ -75,6 +83,9 @@ func (f *File) firstMissing() int64 {
 	return -1
 }
 
+// ingestData writes a block of data to the local file at the specified offset.
+// The offset must be block-aligned and the data must be exactly one block in size
+// (or the correct size for the final block).
 func (f *File) ingestData(b []byte, offset int64) error {
 	if !f.hasSize {
 		return errors.New("invalid operation, file size unknown")
@@ -122,6 +133,7 @@ func (f *File) ingestData(b []byte, offset int64) error {
 	return nil
 }
 
+// getBlockSize returns the block size used for this file.
 func (f *File) getBlockSize() int64 {
 	return f.blkSize
 }

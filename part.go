@@ -16,6 +16,8 @@ func (f *File) SavePart() error {
 	return f.savePart()
 }
 
+// savePart writes the current download status to a .part file. If the file
+// is complete, the .part file is removed instead. Uses atomic rename for safety.
 func (f *File) savePart() error {
 	// save partial file
 	if f.complete {
@@ -52,6 +54,7 @@ func (f *File) savePart() error {
 	return os.Rename(f.path+".wpart", f.path+".part")
 }
 
+// readPart loads download status from a .part file to resume a previous download.
 func (f *File) readPart() error {
 	in, err := os.Open(f.path + ".part")
 	if err != nil {

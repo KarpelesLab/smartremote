@@ -6,6 +6,9 @@ import (
 	"io"
 )
 
+// downloadFull downloads the entire file when partial downloads are not
+// supported by the server. This is a fallback for servers that don't
+// support HTTP Range requests.
 func (f *File) downloadFull() error {
 	// download the file fully
 	// (we are in a lock)
@@ -45,6 +48,9 @@ func (f *File) downloadFull() error {
 	return nil
 }
 
+// needBlocks ensures that all blocks from start to end (inclusive) are
+// downloaded and available locally. It skips blocks that are already
+// downloaded and saves progress after downloading.
 func (f *File) needBlocks(start, end uint32) error {
 	// ensure listed blocks exist and are downloaded
 	// need to be called with lock acquired

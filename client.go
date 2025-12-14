@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// dlClient is an internal HTTP connection handler that manages individual
+// connections to remote URLs. It handles Range requests, connection reuse,
+// and idle background downloading of missing blocks.
 type dlClient struct {
 	dlm      *DownloadManager
 	url      string
@@ -23,6 +26,7 @@ type dlClient struct {
 	expire time.Time
 }
 
+// Close closes the HTTP connection and signals completion to the manager.
 func (dl *dlClient) Close() error {
 	dl.lk.Lock()
 	defer dl.lk.Unlock()
@@ -38,9 +42,11 @@ func (dl *dlClient) Close() error {
 	return nil
 }
 
+// dropDataCount reads and discards cnt bytes from the HTTP response body.
+// If a handler is set, it opportunistically saves complete blocks to disk.
 func (dl *dlClient) dropDataCount(cnt, startPos int64) error {
 	if dl.handler == nil {
-		_, err := io.CopyN(nullWriter{}, dl.reader.Body, cnt)
+		_, err := io.CopyN(io.Discard, dl.reader.Body, cnt)
 		return err
 	}
 
@@ -48,7 +54,7 @@ func (dl *dlClient) dropDataCount(cnt, startPos int64) error {
 	sz := dl.handler.getBlockSize()
 	if sz <= 0 || cnt < sz {
 		// doesn't want data?
-		_, err := io.CopyN(nullWriter{}, dl.reader.Body, cnt)
+		_, err := io.CopyN(io.Discard, dl.reader.Body, cnt)
 		return err
 	}
 
@@ -57,7 +63,7 @@ func (dl *dlClient) dropDataCount(cnt, startPos int64) error {
 	for cnt > 0 {
 		if cnt < sz {
 			// can't download enough so that it's worth it
-			_, err := io.CopyN(nullWriter{}, dl.reader.Body, cnt)
+			_, err := io.CopyN(io.Discard, dl.reader.Body, cnt)
 			return err
 		}
 
@@ -71,7 +77,7 @@ func (dl *dlClient) dropDataCount(cnt, startPos int64) error {
 		err = dl.handler.ingestData(buf, startPos)
 		if err != nil {
 			// give up
-			_, err := io.CopyN(nullWriter{}, dl.reader.Body, cnt)
+			_, err := io.CopyN(io.Discard, dl.reader.Body, cnt)
 			return err
 		}
 
@@ -81,6 +87,8 @@ func (dl *dlClient) dropDataCount(cnt, startPos int64) error {
 	return nil
 }
 
+// ReadAt reads data from the remote URL at the specified offset into p.
+// It reuses existing HTTP connections when possible, or opens new ones as needed.
 func (dl *dlClient) ReadAt(p []byte, off int64) (int, error) {
 	dl.lk.Lock()
 	defer dl.lk.Unlock()
@@ -110,10 +118,13 @@ func (dl *dlClient) ReadAt(p []byte, off int64) (int, error) {
 		}
 	}
 
-	// instanciate a new reader if needed
+	// instantiate a new reader if needed
 	if dl.reader == nil {
 		// spawn a new reader
 		req, err := http.NewRequest("GET", dl.url, nil)
+		if err != nil {
+			return 0, err
+		}
 
 		if off != 0 {
 			req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
@@ -147,6 +158,8 @@ func (dl *dlClient) ReadAt(p []byte, off int64) (int, error) {
 	return n, err
 }
 
+// idleTaskRun is called during idle periods to download missing blocks
+// in the background. It runs in a separate goroutine.
 func (dl *dlClient) idleTaskRun() {
 	// this is run in a separate process
 
@@ -207,6 +220,10 @@ func (dl *dlClient) idleTaskRun() {
 
 	// spawn a new reader
 	req, err := http.NewRequest("GET", dl.url, nil)
+	if err != nil {
+		dl.dlm.logf("idle: failed to create request: %s", err)
+		return
+	}
 
 	if off != 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
@@ -250,5 +267,4 @@ func (dl *dlClient) idleTaskRun() {
 		dl.dlm.logf("idle write failed: %s", err)
 		dl.failure = true
 	}
-	return
 }

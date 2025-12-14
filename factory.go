@@ -10,6 +10,8 @@ import (
 	"github.com/RoaringBitmap/roaring"
 )
 
+// DefaultBlockSize is the size in bytes of each download block (64KB).
+// Downloaded data is tracked and stored in blocks of this size.
 const DefaultBlockSize = 65536
 
 // Open a given URL and return a file pointer that will run partial downloads
@@ -42,6 +44,9 @@ func (dlm *DownloadManager) Open(u string) (*File, error) {
 	return dlm.OpenTo(u, localPath)
 }
 
+// OpenTo opens a given URL and stores downloaded data at the specified local
+// path. If the file already exists with a .part file, the download will resume.
+// If the file exists without a .part file, it is assumed to be complete.
 func (dlm *DownloadManager) OpenTo(u, localPath string) (*File, error) {
 	// generate hash (again if called with Open)
 	hash := sha256.Sum256([]byte(u))
