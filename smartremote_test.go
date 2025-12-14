@@ -3,11 +3,13 @@ package smartremote
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/binary"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -19,6 +21,88 @@ func init() {
 	// Generate 256KB of random test data
 	testData = make([]byte, 256*1024)
 	rand.Read(testData)
+}
+
+// generateOffsetData generates deterministic data where every 8 bytes contains
+// the big-endian representation of that position's offset. This allows verification
+// that the right bytes are at the right positions.
+func generateOffsetData(size int64) []byte {
+	data := make([]byte, size)
+	for i := int64(0); i < size; i += 8 {
+		remaining := size - i
+		if remaining >= 8 {
+			binary.BigEndian.PutUint64(data[i:], uint64(i))
+		} else {
+			// Handle partial last chunk
+			var buf [8]byte
+			binary.BigEndian.PutUint64(buf[:], uint64(i))
+			copy(data[i:], buf[:remaining])
+		}
+	}
+	return data
+}
+
+// verifyOffsetData checks that data at the given offset contains the correct
+// offset values. Returns true if valid, false if corrupted.
+func verifyOffsetData(data []byte, offset int64) bool {
+	for i := int64(0); i < int64(len(data)); i += 8 {
+		pos := offset + i
+		alignedPos := (pos / 8) * 8 // Align to 8-byte boundary
+		remaining := int64(len(data)) - i
+
+		if remaining >= 8 && pos%8 == 0 {
+			// Full aligned 8-byte chunk
+			expected := uint64(alignedPos)
+			actual := binary.BigEndian.Uint64(data[i:])
+			if actual != expected {
+				return false
+			}
+		} else if pos%8 == 0 && remaining < 8 {
+			// Partial chunk at end, aligned
+			var buf [8]byte
+			binary.BigEndian.PutUint64(buf[:], uint64(alignedPos))
+			if !bytes.Equal(data[i:], buf[:remaining]) {
+				return false
+			}
+			break
+		} else {
+			// Unaligned read - check byte by byte
+			for j := int64(0); j < 8 && i+j < int64(len(data)); j++ {
+				bytePos := pos + j
+				alignedStart := (bytePos / 8) * 8
+				byteOffset := bytePos % 8
+				var buf [8]byte
+				binary.BigEndian.PutUint64(buf[:], uint64(alignedStart))
+				if data[i+j] != buf[byteOffset] {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// newOffsetTestServer creates an HTTP server that serves offset-based deterministic data.
+// Every 8 bytes contains the big-endian offset of that position.
+func newOffsetTestServer(size int64) (*httptest.Server, []byte) {
+	data := generateOffsetData(size)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rangeHeader := r.Header.Get("Range")
+		if rangeHeader != "" {
+			var start, end int64
+			_, err := parseRange(rangeHeader, int64(len(data)), &start, &end)
+			if err == nil {
+				w.Header().Set("Content-Length", itoa(end-start+1))
+				w.WriteHeader(http.StatusPartialContent)
+				w.Write(data[start : end+1])
+				return
+			}
+		}
+		w.Header().Set("Content-Length", itoa(int64(len(data))))
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	}))
+	return server, data
 }
 
 // newTestServer creates an HTTP server that serves testData with Range support
@@ -665,4 +749,470 @@ func TestManagerLogf(t *testing.T) {
 	// With nil logger, should not panic
 	dm.Logger = nil
 	dm.logf("test %s", "message") // Should not panic
+}
+
+// TestOffsetDataGeneration verifies that offset data generation and verification work correctly.
+func TestOffsetDataGeneration(t *testing.T) {
+	// Test various sizes
+	sizes := []int64{64, 1000, 8192, 65536}
+	for _, size := range sizes {
+		data := generateOffsetData(size)
+		if int64(len(data)) != size {
+			t.Errorf("Generated data size %d, want %d", len(data), size)
+		}
+
+		// Verify entire data
+		if !verifyOffsetData(data, 0) {
+			t.Errorf("Generated data failed verification for size %d", size)
+		}
+
+		// Verify partial reads at various offsets
+		offsets := []int64{0, 8, 16, 100, 1000}
+		for _, off := range offsets {
+			if off >= size {
+				continue
+			}
+			readSize := int64(256)
+			if off+readSize > size {
+				readSize = size - off
+			}
+			if !verifyOffsetData(data[off:off+readSize], off) {
+				t.Errorf("Partial verification failed at offset %d for size %d", off, size)
+			}
+		}
+	}
+}
+
+// TestIdleDownloadIntegrity tests that idle downloading produces correct data.
+func TestIdleDownloadIntegrity(t *testing.T) {
+	// Use 4 blocks of data
+	dataSize := int64(4 * DefaultBlockSize)
+	server, expectedData := newOffsetTestServer(dataSize)
+	defer server.Close()
+
+	dm := NewDownloadManager()
+	dm.Logger = nil
+
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "test.bin")
+
+	f, err := dm.OpenTo(server.URL, localPath)
+	if err != nil {
+		t.Fatalf("OpenTo failed: %v", err)
+	}
+	defer f.Close()
+
+	// Read first block to trigger connection
+	buf := make([]byte, 1024)
+	_, err = f.Read(buf)
+	if err != nil {
+		t.Fatalf("Initial read failed: %v", err)
+	}
+	if !verifyOffsetData(buf, 0) {
+		t.Fatal("Initial read data corrupted")
+	}
+
+	// Wait for idle download to complete remaining blocks
+	timeout := time.After(10 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			t.Log("Timeout waiting for idle download, verifying available data")
+			goto verify
+		case <-ticker.C:
+			f.lk.Lock()
+			complete := f.isComplete()
+			f.lk.Unlock()
+			if complete {
+				t.Log("Idle download completed")
+				goto verify
+			}
+		}
+	}
+
+verify:
+	// Verify all data integrity
+	allData := make([]byte, dataSize)
+	n, err := f.ReadAt(allData, 0)
+	if err != nil && err != io.EOF {
+		t.Fatalf("Full ReadAt failed: %v", err)
+	}
+	if int64(n) != dataSize {
+		t.Errorf("Read %d bytes, expected %d", n, dataSize)
+	}
+
+	if !bytes.Equal(allData, expectedData) {
+		t.Error("Data mismatch after idle download")
+		// Find first difference
+		for i := 0; i < len(allData); i++ {
+			if allData[i] != expectedData[i] {
+				t.Errorf("First difference at byte %d: got %02x, want %02x", i, allData[i], expectedData[i])
+				break
+			}
+		}
+	}
+
+	if !verifyOffsetData(allData, 0) {
+		t.Error("Offset verification failed - data corruption detected")
+	}
+}
+
+// TestIdleDownloadWithConcurrentReads tests that concurrent reads during idle downloading
+// don't cause data corruption or deadlocks.
+func TestIdleDownloadWithConcurrentReads(t *testing.T) {
+	dataSize := int64(8 * DefaultBlockSize)
+	server, expectedData := newOffsetTestServer(dataSize)
+	defer server.Close()
+
+	dm := NewDownloadManager()
+	dm.Logger = nil
+	dm.MaxReadersPerFile = 4
+
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "test.bin")
+
+	f, err := dm.OpenTo(server.URL, localPath)
+	if err != nil {
+		t.Fatalf("OpenTo failed: %v", err)
+	}
+	defer f.Close()
+
+	// Start concurrent readers that read random positions
+	const numReaders = 5
+	const readsPerReader = 20
+	errors := make(chan error, numReaders*readsPerReader)
+	done := make(chan bool, numReaders)
+
+	for i := 0; i < numReaders; i++ {
+		go func(readerID int) {
+			defer func() { done <- true }()
+
+			for j := 0; j < readsPerReader; j++ {
+				// Read from various offsets
+				offset := int64((readerID*readsPerReader + j) * 1024 % int(dataSize-1024))
+				buf := make([]byte, 1024)
+				n, err := f.ReadAt(buf, offset)
+				if err != nil && err != io.EOF {
+					errors <- err
+					continue
+				}
+
+				// Verify data integrity
+				if !verifyOffsetData(buf[:n], offset) {
+					errors <- io.ErrUnexpectedEOF // Use as sentinel for corruption
+				}
+
+				// Also verify against expected data
+				if !bytes.Equal(buf[:n], expectedData[offset:offset+int64(n)]) {
+					errors <- io.ErrUnexpectedEOF
+				}
+
+				time.Sleep(10 * time.Millisecond)
+			}
+		}(i)
+	}
+
+	// Wait for all readers to complete
+	for i := 0; i < numReaders; i++ {
+		<-done
+	}
+	close(errors)
+
+	// Check for errors
+	errCount := 0
+	for err := range errors {
+		if err == io.ErrUnexpectedEOF {
+			t.Error("Data corruption detected during concurrent reads")
+		} else {
+			t.Errorf("Read error: %v", err)
+		}
+		errCount++
+	}
+
+	if errCount > 0 {
+		t.Errorf("Total errors: %d", errCount)
+	}
+}
+
+// TestIdleDownloadDoesNotBlockReads verifies that idle downloading doesn't block user reads.
+func TestIdleDownloadDoesNotBlockReads(t *testing.T) {
+	dataSize := int64(10 * DefaultBlockSize)
+	var requestCount atomic.Int64
+
+	// Create a slow server that tracks request count
+	data := generateOffsetData(dataSize)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount.Add(1)
+		// Add small delay to simulate network latency
+		time.Sleep(50 * time.Millisecond)
+
+		rangeHeader := r.Header.Get("Range")
+		if rangeHeader != "" {
+			var start, end int64
+			_, err := parseRange(rangeHeader, int64(len(data)), &start, &end)
+			if err == nil {
+				w.Header().Set("Content-Length", itoa(end-start+1))
+				w.WriteHeader(http.StatusPartialContent)
+				w.Write(data[start : end+1])
+				return
+			}
+		}
+		w.Header().Set("Content-Length", itoa(int64(len(data))))
+		w.WriteHeader(http.StatusOK)
+		w.Write(data)
+	}))
+	defer server.Close()
+
+	dm := NewDownloadManager()
+	dm.Logger = nil
+
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "test.bin")
+
+	f, err := dm.OpenTo(server.URL, localPath)
+	if err != nil {
+		t.Fatalf("OpenTo failed: %v", err)
+	}
+	defer f.Close()
+
+	// Trigger idle download by reading first block
+	buf := make([]byte, DefaultBlockSize)
+	_, err = f.Read(buf)
+	if err != nil {
+		t.Fatalf("Initial read failed: %v", err)
+	}
+
+	// Wait a bit for idle download to start
+	time.Sleep(200 * time.Millisecond)
+
+	// Now do a read to a different location - this should not be blocked
+	// for the full duration of an idle download cycle
+	start := time.Now()
+	buf2 := make([]byte, 1024)
+	_, err = f.ReadAt(buf2, 5*DefaultBlockSize)
+	readDuration := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("Read during idle download failed: %v", err)
+	}
+
+	// Read should complete reasonably quickly (not blocked for full idle cycle)
+	// Allow generous time for HTTP request but not 1+ seconds
+	if readDuration > 500*time.Millisecond {
+		t.Errorf("Read took %v, suggesting it was blocked by idle download", readDuration)
+	}
+
+	// Verify data integrity
+	if !verifyOffsetData(buf2, 5*DefaultBlockSize) {
+		t.Error("Data corruption in read during idle download")
+	}
+
+	t.Logf("Read during idle download completed in %v, total requests: %d", readDuration, requestCount.Load())
+}
+
+// TestMultipleReadersIntegrity tests that multiple readers produce correct data.
+func TestMultipleReadersIntegrity(t *testing.T) {
+	dataSize := int64(6 * DefaultBlockSize)
+	server, expectedData := newOffsetTestServer(dataSize)
+	defer server.Close()
+
+	dm := NewDownloadManager()
+	dm.Logger = nil
+	dm.MaxReadersPerFile = 3
+
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "test.bin")
+
+	f, err := dm.OpenTo(server.URL, localPath)
+	if err != nil {
+		t.Fatalf("OpenTo failed: %v", err)
+	}
+	defer f.Close()
+
+	// Simulate ZIP-like access pattern: read from end, then from various positions
+	positions := []int64{
+		5 * DefaultBlockSize,         // Near end (like ZIP central directory)
+		0,                            // Beginning
+		3 * DefaultBlockSize,         // Middle
+		5*DefaultBlockSize + 1000,    // Near end again
+		DefaultBlockSize,             // Second block
+		4 * DefaultBlockSize,         // Fourth block
+	}
+
+	for i, pos := range positions {
+		readSize := int64(2048)
+		if pos+readSize > dataSize {
+			readSize = dataSize - pos
+		}
+
+		buf := make([]byte, readSize)
+		n, err := f.ReadAt(buf, pos)
+		if err != nil && err != io.EOF {
+			t.Fatalf("ReadAt %d at offset %d failed: %v", i, pos, err)
+		}
+
+		if !bytes.Equal(buf[:n], expectedData[pos:pos+int64(n)]) {
+			t.Errorf("Data mismatch at position %d (read %d)", pos, i)
+		}
+
+		if !verifyOffsetData(buf[:n], pos) {
+			t.Errorf("Offset verification failed at position %d (read %d)", pos, i)
+		}
+	}
+}
+
+// TestIdleDownloadStress performs heavy concurrent access while idle downloading.
+func TestIdleDownloadStress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping stress test in short mode")
+	}
+
+	dataSize := int64(16 * DefaultBlockSize) // 1MB
+	server, expectedData := newOffsetTestServer(dataSize)
+	defer server.Close()
+
+	dm := NewDownloadManager()
+	dm.Logger = nil
+	dm.MaxReadersPerFile = 5
+
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "test.bin")
+
+	f, err := dm.OpenTo(server.URL, localPath)
+	if err != nil {
+		t.Fatalf("OpenTo failed: %v", err)
+	}
+	defer f.Close()
+
+	// Run stress test for a fixed duration
+	const testDuration = 3 * time.Second
+	const numGoroutines = 10
+
+	var readCount atomic.Int64
+	var errorCount atomic.Int64
+	stopCh := make(chan struct{})
+
+	// Start goroutines that continuously read random positions
+	for i := 0; i < numGoroutines; i++ {
+		go func(id int) {
+			readBuf := make([]byte, 4096)
+			offset := int64(id * int(DefaultBlockSize/2))
+
+			for {
+				select {
+				case <-stopCh:
+					return
+				default:
+					// Vary offset to stress different patterns
+					readOffset := offset % (dataSize - 4096)
+					n, err := f.ReadAt(readBuf, readOffset)
+					if err != nil && err != io.EOF {
+						errorCount.Add(1)
+						continue
+					}
+
+					readCount.Add(1)
+
+					// Verify integrity
+					if !bytes.Equal(readBuf[:n], expectedData[readOffset:readOffset+int64(n)]) {
+						errorCount.Add(1)
+						t.Errorf("Data mismatch at offset %d", readOffset)
+					}
+
+					// Move to next position
+					offset += 1024
+				}
+			}
+		}(i)
+	}
+
+	// Let it run
+	time.Sleep(testDuration)
+	close(stopCh)
+
+	// Give goroutines time to finish
+	time.Sleep(100 * time.Millisecond)
+
+	t.Logf("Stress test completed: %d reads, %d errors", readCount.Load(), errorCount.Load())
+
+	if errorCount.Load() > 0 {
+		t.Errorf("Stress test had %d errors", errorCount.Load())
+	}
+
+	// Verify final file integrity
+	allData := make([]byte, dataSize)
+	n, err := f.ReadAt(allData, 0)
+	if err != nil && err != io.EOF {
+		t.Fatalf("Final ReadAt failed: %v", err)
+	}
+
+	if !bytes.Equal(allData[:n], expectedData[:n]) {
+		t.Error("Final data verification failed")
+	}
+}
+
+// TestIdleDownloadCompletion verifies idle download eventually completes the file.
+func TestIdleDownloadCompletion(t *testing.T) {
+	dataSize := int64(4 * DefaultBlockSize)
+	server, expectedData := newOffsetTestServer(dataSize)
+	defer server.Close()
+
+	dm := NewDownloadManager()
+	dm.Logger = nil
+
+	tmpDir := t.TempDir()
+	localPath := filepath.Join(tmpDir, "test.bin")
+
+	f, err := dm.OpenTo(server.URL, localPath)
+	if err != nil {
+		t.Fatalf("OpenTo failed: %v", err)
+	}
+	defer f.Close()
+
+	// Read just 1 byte to establish connection and trigger idle downloading
+	buf := make([]byte, 1)
+	_, err = f.Read(buf)
+	if err != nil {
+		t.Fatalf("Initial read failed: %v", err)
+	}
+
+	// Wait for idle download to complete
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		f.lk.Lock()
+		complete := f.isComplete()
+		cardinality := f.status.GetCardinality()
+		blockCount := f.getBlockCount()
+		f.lk.Unlock()
+
+		t.Logf("Progress: %d/%d blocks", cardinality, blockCount)
+
+		if complete {
+			t.Log("File download completed via idle downloading")
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Verify complete file
+	allData := make([]byte, dataSize)
+	n, err := f.ReadAt(allData, 0)
+	if err != nil && err != io.EOF {
+		t.Fatalf("Final ReadAt failed: %v", err)
+	}
+
+	if int64(n) != dataSize {
+		t.Errorf("Read %d bytes, expected %d", n, dataSize)
+	}
+
+	if !bytes.Equal(allData, expectedData) {
+		t.Error("Final data doesn't match expected")
+	}
+
+	if !verifyOffsetData(allData, 0) {
+		t.Error("Offset verification failed on complete file")
+	}
 }
