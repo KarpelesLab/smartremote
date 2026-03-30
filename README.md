@@ -193,6 +193,9 @@ if err != nil {
 - `Stat() (os.FileInfo, error)` - Get file info
 - `Complete() error` - Download entire file
 - `SavePart() error` - Manually save download progress
+- `InvalidateRange(start, end int64) error` - Mark blocks in range as not downloaded
+- `Verify(expected [32]byte) error` - Verify full file SHA-256, invalidate on mismatch
+- `VerifyRange(start, end int64, expected [32]byte) error` - Verify range SHA-256, invalidate on mismatch
 
 ## Resume Behavior
 
@@ -212,6 +215,39 @@ On close:
 - Go 1.18 or later
 - Server must support HTTP Range requests for partial downloads (falls back to full download otherwise)
 
-## TODO
+## Range Invalidation & Checksum Verification
 
-- Add support for range invalidation (bad checksum causes re-download of affected area)
+SmartRemote supports invalidating downloaded ranges and verifying data integrity with SHA-256 checksums. When a checksum mismatch is detected, the affected blocks are automatically invalidated and will be re-downloaded on next access.
+
+### Invalidate a Range
+
+Force specific blocks to be re-downloaded:
+
+```go
+// Invalidate bytes [start, end) — blocks will be re-downloaded on next read
+err := f.InvalidateRange(0, 65536)
+```
+
+### Verify Entire File
+
+Verify the complete file against a known SHA-256 hash:
+
+```go
+expected := sha256.Sum256(knownGoodData)
+err := f.Verify(expected)
+if errors.Is(err, smartremote.ErrChecksumMismatch) {
+    // All blocks invalidated, will re-download on next read
+}
+```
+
+### Verify a Range
+
+Verify a specific byte range:
+
+```go
+expected := sha256.Sum256(knownGoodData[start:end])
+err := f.VerifyRange(start, end, expected)
+if errors.Is(err, smartremote.ErrChecksumMismatch) {
+    // Only affected blocks invalidated
+}
+```
